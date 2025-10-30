@@ -31,6 +31,22 @@
 
 #define BUFFER_OFFSET( offset )   ((GLvoid*) (offset))
 
+// basic structs for the maze 
+typedef struct {
+    int north;
+    int east;
+    int south;
+    int west;
+    int visited; // for generation/solving
+    int on_path;      // for marking the final solution
+} cell;
+
+typedef struct {
+    int width;
+    int height;
+    cell **cells;
+} Maze;
+
 // inital decelaration of vertices
 //      -inital values for debugging
 vec4 vertices[110000] =
@@ -56,6 +72,10 @@ GLuint ctm_location;
 GLuint program;
 GLuint vbo;
 
+// maze global variables
+int maze_height = 5;
+int maze_width = 8; 
+
 // msc global variables
 int stl_value = 0;    // change this to swap between stl and basic object for memory allocation
 float current_scale = 1;
@@ -71,7 +91,194 @@ float touching = 0;
 
 // -------------end glob vars  -----------------------------------------------------------------------------------------// 
 
+// ----------------- maze functions  ---------------------------------------------------------------------------------//
 
+// initialize maze
+
+Maze *create_maze(int width, int height) 
+{
+    Maze *m = malloc(sizeof(Maze));
+    m->width = width;
+    m->height = height;
+
+    m->cells = malloc(height * sizeof(cell *));
+    for (int y = 0; y < height; y++) 
+    {
+        m->cells[y] = malloc(width * sizeof(cell));
+        for (int x = 0; x < width; x++) 
+        {
+            m->cells[y][x].north = 1;
+            m->cells[y][x].east = 1;
+            m->cells[y][x].south = 1;
+            m->cells[y][x].west = 1;
+            m->cells[y][x].visited = 0;
+        }
+    }
+
+    return m;
+}
+
+// Recursivly backtrack to generate maze
+
+void remove_wall(Maze *m, int x1, int y1, int x2, int y2) 
+{
+    if (x2 == x1 && y2 == y1 - 1) { // north
+        m->cells[y1][x1].north = 0;
+        m->cells[y2][x2].south = 0;
+    } else if (x2 == x1 && y2 == y1 + 1) { // south
+        m->cells[y1][x1].south = 0;
+        m->cells[y2][x2].north = 0;
+    } else if (x2 == x1 + 1 && y2 == y1) { // east
+        m->cells[y1][x1].east = 0;
+        m->cells[y2][x2].west = 0;
+    } else if (x2 == x1 - 1 && y2 == y1) { // west
+        m->cells[y1][x1].west = 0;
+        m->cells[y2][x2].east = 0;
+    }
+}
+
+void shuffle(int *arr, int n) 
+{
+    for (int i = 0; i < n - 1; i++) {
+        int j = i + rand() / (RAND_MAX / (n - i) + 1);
+        int t = arr[j];
+        arr[j] = arr[i];
+        arr[i] = t;
+    }
+}
+
+void generate_maze_recursive(Maze *m, int x, int y) 
+{
+    m->cells[y][x].visited = 1;
+
+    int dirs[4] = {0, 1, 2, 3}; // N, E, S, W
+    shuffle(dirs, 4);
+
+    for (int i = 0; i < 4; i++) {
+        int nx = x, ny = y;
+        switch (dirs[i]) {
+            case 0: ny--; break;
+            case 1: nx++; break;
+            case 2: ny++; break;
+            case 3: nx--; break;
+        }
+
+        if (nx >= 0 && ny >= 0 && nx < m->width && ny < m->height && !m->cells[ny][nx].visited) {
+            remove_wall(m, x, y, nx, ny);
+            generate_maze_recursive(m, nx, ny);
+        }
+    }
+}
+
+void generate_maze(Maze *m) 
+{
+    srand((unsigned) time(NULL));
+    generate_maze_recursive(m, 0, 0);
+}
+
+int solve_maze(Maze *m, int x, int y, int goal_x, int goal_y) 
+{
+    if (x == goal_x && y == goal_y) {
+        m->cells[y][x].on_path = 1;
+        return 1;
+    }
+
+    m->cells[y][x].visited = 1;
+
+    // north
+    if (!m->cells[y][x].north && y > 0 && !m->cells[y - 1][x].visited)
+        if (solve_maze(m, x, y - 1, goal_x, goal_y)) { m->cells[y][x].on_path = 1; return 1; }
+    // east
+    if (!m->cells[y][x].east && x < m->width - 1 && !m->cells[y][x + 1].visited)
+        if (solve_maze(m, x + 1, y, goal_x, goal_y)) { m->cells[y][x].on_path = 1; return 1; }
+    // south
+    if (!m->cells[y][x].south && y < m->height - 1 && !m->cells[y + 1][x].visited)
+        if (solve_maze(m, x, y + 1, goal_x, goal_y)) { m->cells[y][x].on_path = 1; return 1; }
+    // west
+    if (!m->cells[y][x].west && x > 0 && !m->cells[y][x - 1].visited)
+        if (solve_maze(m, x - 1, y, goal_x, goal_y)) { m->cells[y][x].on_path = 1; return 1; }
+
+    return 0;
+}
+
+void free_maze(Maze *m) 
+{
+    for (int y = 0; y < m->height; y++)
+        free(m->cells[y]);
+    free(m->cells);
+    free(m);
+}
+
+void print_maze(Maze *m) 
+{
+    // Top border (with opening at start)
+    for (int x = 0; x < m->width; x++) 
+    {
+        if (x == 0)
+            printf("+   "); // opening at top-left
+        else
+            printf("+---");
+    }
+    printf("+\n");
+
+    for (int y = 0; y < m->height; y++) 
+    {
+        // Left wall and cells
+        for (int x = 0; x < m->width; x++) 
+        {
+            if (m->cells[y][x].west)
+                printf("|");
+            else
+                printf(" ");
+
+            // mark visited cells with *
+            if (m->cells[y][x].on_path)
+                printf(" * ");
+            else
+                printf("   ");
+        }
+
+        // rightmost wall, with exit at bottom-right
+        if (y == m->height - 1)
+            printf(" \n"); // opening at bottom-right
+        else
+            printf("|\n");
+
+        // Bottom walls
+        for (int x = 0; x < m->width; x++) 
+        {
+            if (m->cells[y][x].south)
+                printf("+---");
+            else
+                printf("+   ");
+        }
+        printf("+\n");
+    }
+}
+
+void testmaze(void)
+{
+    Maze *m = create_maze(maze_width, maze_height);
+    generate_maze(m);
+
+    // reset visited flags for solver
+    for (int y = 0; y < m->height; y++)
+        for (int x = 0; x < m->width; x++)
+        {
+            m->cells[y][x].visited = 0;
+            m->cells[y][x].on_path = 0;
+        }
+    if (solve_maze(m, 0, 0, maze_width-1, maze_height-1))
+        printf("Maze solved!\n");
+    else
+        printf("No solution.\n");
+
+    print_maze(m);
+
+    free_maze(m);
+}
+
+// ----------------- end maze funcitons  ---------------------------------------------------------------------------------//
 
 // ----------------- object functions  ---------------------------------------------------------------------------------//
 
@@ -399,6 +606,7 @@ int main(int argc, char **argv)
 
     // do prompt before drawing anything
     menu();
+    testmaze();
 
     // now draw the shapes
     glewInit();
