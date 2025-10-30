@@ -2,7 +2,7 @@
  * make_shapes.c
  *
  * 
- *  CS1566 Project 1 Transformations: Created on: Octobor 15, 2025
+ *  CS1566 Project 2: Maze Solver Created on: Octobor 29, 2025
  *      Author: Joshua Frank
  */
 
