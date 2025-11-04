@@ -61,6 +61,34 @@ vec4 colors[110000] =
  {0.0, 0.0, 1.0, 1.0},	// blue  (for bottom right)
  };	
 
+// basic cube primitive (1x1x1 centered) to scale/translate later
+vec4 unitCubeVertices[36] = {
+    // Front
+    {-0.5, -0.5, 0.5, 1}, {0.5, -0.5, 0.5, 1}, {0.5, 0.5, 0.5, 1},
+    {-0.5, -0.5, 0.5, 1}, {0.5, 0.5, 0.5, 1}, {-0.5, 0.5, 0.5, 1},
+    // Back
+    {-0.5, -0.5, -0.5, 1}, {0.5, 0.5, -0.5, 1}, {0.5, -0.5, -0.5, 1},
+    {-0.5, -0.5, -0.5, 1}, {-0.5, 0.5, -0.5, 1}, {0.5, 0.5, -0.5, 1},
+    // Left
+    {-0.5, -0.5, -0.5, 1}, {-0.5, -0.5, 0.5, 1}, {-0.5, 0.5, 0.5, 1},
+    {-0.5, -0.5, -0.5, 1}, {-0.5, 0.5, 0.5, 1}, {-0.5, 0.5, -0.5, 1},
+    // Right
+    {0.5, -0.5, -0.5, 1}, {0.5, 0.5, 0.5, 1}, {0.5, -0.5, 0.5, 1},
+    {0.5, -0.5, -0.5, 1}, {0.5, 0.5, -0.5, 1}, {0.5, 0.5, 0.5, 1},
+    // Top
+    {-0.5, 0.5, -0.5, 1}, {-0.5, 0.5, 0.5, 1}, {0.5, 0.5, 0.5, 1},
+    {-0.5, 0.5, -0.5, 1}, {0.5, 0.5, 0.5, 1}, {0.5, 0.5, -0.5, 1},
+    // Bottom
+    {-0.5, -0.5, -0.5, 1}, {0.5, -0.5, 0.5, 1}, {-0.5, -0.5, 0.5, 1},
+    {-0.5, -0.5, -0.5, 1}, {0.5, -0.5, -0.5, 1}, {0.5, -0.5, 0.5, 1}
+};
+
+// basic colors
+vec4 wallColor = {0.6, 0.2, 0.2, 1}; // brown walls
+vec4 poleColor = {0.5, 0.5, 0.5, 1}; // gray poles
+vec4 floorColor = {0.3, 0.3, 0.3, 1}; // dark gray floor
+
+int vertIndex = 0;
  
 // ------------global variables- --------------------------------------------------------------------------------------// 
 
@@ -73,7 +101,7 @@ GLuint program;
 GLuint vbo;
 
 // maze global variables
-int maze_height = 5;
+int maze_height = 8;
 int maze_width = 8; 
 
 // msc global variables
@@ -90,6 +118,96 @@ int leftDown = 0;
 float touching = 0;
 
 // -------------end glob vars  -----------------------------------------------------------------------------------------// 
+
+// ----------------- cube (maze wall) functions ------------------------------------------------------------------------------------//
+
+void addCube(mat4 T, vec4 color)
+{
+    for(int i = 0; i < 36; i++)
+    {
+        vec4 v = unitCubeVertices[i];
+        vec4 r = matrix_vector_multi(T, v);
+        vertices[vertIndex] = r;
+        colors[vertIndex] = color;
+        vertIndex++;
+    }
+}
+
+void addFloorTile(float x, float z)
+{
+    // place a flat cube at y = -0.5 (same height as poles)
+    // scale Y very small so it's a flat tile
+    mat4 T = matrix_multi(
+                matrix_translation(x, -0.5f, z),
+                matrix_scaling(1.0f, 0.05f, 1.0f) // thin plane
+            );
+
+    addCube(T, floorColor);
+}
+
+void buildMazeGeometry(Maze*m)
+{
+    float y = -0.5f; // floor plane
+
+    // ---- Floor tiles ----
+    for(int j = 0; j < m->height; j++)
+    {
+        for(int i = 0; i < m->width; i++)
+        {
+            addFloorTile(i, j);
+        }
+    }
+
+    // place poles at grid intersections (width+1 x height+1)
+    for(int j=0;j<=m->height;j++)
+    {
+        for(int i=0;i<=m->width;i++)
+        {
+            float x = (float)i;
+            float z = (float)j;
+            mat4 poleT = matrix_multi(matrix_translation(x-0.5f, y, z-0.5f), matrix_scaling(0.2,1,0.2));
+            addCube(poleT, poleColor);
+        }
+    }
+
+    // place walls
+    for(int j=0;j<m->height;j++)
+    {
+        for(int i=0;i<m->width;i++)
+        {
+            float cx = (float)i;
+            float cz = (float)j;
+            // north wall
+            if(m->cells[j][i].north && !(i==0 && j==0))
+            {
+                mat4 nT = matrix_multi(matrix_translation(cx, y, cz-0.5),matrix_scaling(1,1,0.1));
+                addCube(nT, wallColor);
+            }
+            // west wall
+            if(m->cells[j][i].west)
+            {
+                mat4 wT = matrix_multi(matrix_translation(cx-0.5, y, cz), matrix_scaling(0.1,1,1));
+                addCube(wT, wallColor);
+            }
+            // last row south
+            if(j==m->height-1 && m->cells[j][i].south && !(i==m->width-1 && j==m->height-1))
+            {
+                mat4 sT = matrix_multi(matrix_translation(cx, y, cz+0.5), matrix_scaling(1,1,0.1));
+                addCube(sT, wallColor);
+            }
+            // last col east
+            if(i==m->width-1 && m->cells[j][i].east)
+            {
+                mat4 eT = matrix_multi(matrix_translation(cx+0.5, y, cz), matrix_scaling(0.1,1,1));
+                addCube(eT, wallColor);
+            }
+        }
+    }
+    num_vertices = vertIndex;
+}
+
+
+// ----------------- end cube functions --------------------------------------------------------------------------------//
 
 // ----------------- maze functions  ---------------------------------------------------------------------------------//
 
@@ -260,6 +378,9 @@ void testmaze(void)
 {
     Maze *m = create_maze(maze_width, maze_height);
     generate_maze(m);
+
+    // build the 3D maze geometry once
+    buildMazeGeometry(m);
 
     // reset visited flags for solver
     for (int y = 0; y < m->height; y++)
