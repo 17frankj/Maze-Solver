@@ -30,6 +30,21 @@
 #include <ctype.h>
 
 #define BUFFER_OFFSET( offset )   ((GLvoid*) (offset))
+#define TEX_BRICK 1
+#define TEX_STONE 2
+#define TEX_GRASS 3
+#define MAX_VERTS 110000
+
+
+vec2 tex_face[6] = {
+    {0.0f, 1.0f}, // bottom-left
+    {1.0f, 1.0f}, // bottom-right
+    {0.0f, 0.0f}, // top-left
+
+    {0.0f, 0.0f}, // top-left
+    {1.0f, 1.0f}, // bottom-right
+    {1.0f, 0.0f}  // top-right
+};
 
 // basic structs for the maze 
 typedef struct {
@@ -88,11 +103,20 @@ vec4 wallColor = {0.6, 0.2, 0.2, 1}; // brown walls
 vec4 poleColor = {0.5, 0.5, 0.5, 1}; // gray poles
 vec4 floorColor = {0.3, 0.3, 0.3, 1}; // dark gray floor
 
+vec2 tex_coords[110000] =
+{{ 0.0,  0.5},	// top
+ {-0.5, -0.5},	// bottom left
+ { 0.5, -0.5},	// bottom right
+ };	
+
 int vertIndex = 0;
  
 // ------------global variables- --------------------------------------------------------------------------------------// 
 
-int num_vertices = 1100000;   // max number of verts needed for stl
+int num_vertices = 0;   // max number of verts needed 
+int tex_width = 1200;
+int tex_height = 1200;
+
 mat4 my_ctm = {{1,0,0,0},{0,1,0,0}, {0,0,1,0}, {0,0,0,1}};  // initial identity matrix for moving the objects
 
 // converstions to open gl types
@@ -121,14 +145,46 @@ float touching = 0;
 
 // ----------------- cube (maze wall) functions ------------------------------------------------------------------------------------//
 
-void addCube(mat4 T, vec4 color)
+void addCube(mat4 T, int texType)
 {
-    for(int i = 0; i < 36; i++)
+    float u0, u1, v0, v1;
+
+    // Select quadrant based on texture type
+    switch (texType)
+    {
+        case TEX_GRASS: // floor
+            u0 = 0.0f; u1 = 0.5f;
+            v0 = 0.5f; v1 = 1.0f;
+            break;
+
+        case TEX_STONE: // columns
+            u0 = 0.5f; u1 = 1.0f;
+            v0 = 0.0f; v1 = 0.5f;
+            break;
+
+        case TEX_BRICK: // wall
+            u0 = 0.0f; u1 = 0.5f;
+            v0 = 0.0f; v1 = 0.5f;
+            break;
+
+        default: // fallback
+            u0 = 0.0f; u1 = 0.5f;
+            v0 = 0.5f; v1 = 1.0f;
+            break;
+    }
+
+    for (int i = 0; i < 36; i++)
     {
         vec4 v = unitCubeVertices[i];
         vec4 r = matrix_vector_multi(T, v);
         vertices[vertIndex] = r;
-        colors[vertIndex] = color;
+
+        int faceVert = i % 6;
+
+        // Map unit square texcoords to the chosen quadrant
+        tex_coords[vertIndex].x = u0 + tex_face[faceVert].x * (u1 - u0);
+        tex_coords[vertIndex].y = v0 + tex_face[faceVert].y * (v1 - v0);
+
         vertIndex++;
     }
 }
@@ -142,11 +198,12 @@ void addFloorTile(float x, float z)
                 matrix_scaling(1.0f, 0.05f, 1.0f) // thin plane
             );
 
-    addCube(T, floorColor);
+    addCube(T, TEX_GRASS);
 }
 
 void buildMazeGeometry(Maze*m)
 {
+    //vertIndex = 0;
     float y = -0.5f; // floor plane
 
     // ---- Floor tiles ----
@@ -166,7 +223,7 @@ void buildMazeGeometry(Maze*m)
             float x = (float)i;
             float z = (float)j;
             mat4 poleT = matrix_multi(matrix_translation(x-0.5f, y, z-0.5f), matrix_scaling(0.2,1,0.2));
-            addCube(poleT, poleColor);
+            addCube(poleT, TEX_STONE);
         }
     }
 
@@ -181,25 +238,25 @@ void buildMazeGeometry(Maze*m)
             if(m->cells[j][i].north && !(i==0 && j==0))
             {
                 mat4 nT = matrix_multi(matrix_translation(cx, y, cz-0.5),matrix_scaling(1,1,0.1));
-                addCube(nT, wallColor);
+                addCube(nT, TEX_BRICK);
             }
             // west wall
             if(m->cells[j][i].west)
             {
                 mat4 wT = matrix_multi(matrix_translation(cx-0.5, y, cz), matrix_scaling(0.1,1,1));
-                addCube(wT, wallColor);
+                addCube(wT, TEX_BRICK);
             }
             // last row south
             if(j==m->height-1 && m->cells[j][i].south && !(i==m->width-1 && j==m->height-1))
             {
                 mat4 sT = matrix_multi(matrix_translation(cx, y, cz+0.5), matrix_scaling(1,1,0.1));
-                addCube(sT, wallColor);
+                addCube(sT, TEX_BRICK);
             }
             // last col east
             if(i==m->width-1 && m->cells[j][i].east)
             {
                 mat4 eT = matrix_multi(matrix_translation(cx+0.5, y, cz), matrix_scaling(0.1,1,1));
-                addCube(eT, wallColor);
+                addCube(eT, TEX_BRICK);
             }
         }
     }
@@ -482,31 +539,58 @@ void init(void)
     // set sizes for verts from STL before drawing
     my_ctm = identity(); // clear garbage in memory
 
+    tex_width = 800;
+    tex_height = 800;
+
+    GLubyte my_texels[tex_width][tex_height][3];
+    
+    FILE *fp = fopen("p2texture04.raw", "r");
+    if (!fp) {
+        fprintf(stderr, "ERROR: Cannot open p2texture04.raw\n");
+        exit(1);
+    }
+    fread(my_texels, tex_width * tex_height * 3, 1, fp);
+    fclose(fp);
+
     GLuint program = initShader("vshader.glsl", "fshader.glsl");
     glUseProgram(program);
+
+    GLuint mytex[1];
+    glGenTextures(1, mytex);
+    glBindTexture(GL_TEXTURE_2D, mytex[0]);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tex_width, tex_height, 0, GL_RGB, GL_UNSIGNED_BYTE, my_texels);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+    int param;
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &param);
 
     GLuint vao;
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
-
-    // Single VBO
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
     
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices) + sizeof(colors), NULL, GL_STATIC_DRAW);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
-    glBufferSubData(GL_ARRAY_BUFFER, sizeof(vertices), sizeof(colors), colors);
+    GLuint buffer;
+    glGenBuffers(1, &buffer);
+    glBindBuffer(GL_ARRAY_BUFFER, buffer);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vec4) * num_vertices + sizeof(vec2) * num_vertices, NULL, GL_STATIC_DRAW);
+
+    // Upload only actual data (vertIndex == num_vertices)
+    glBufferSubData(GL_ARRAY_BUFFER, 0, num_vertices * sizeof(vec4), vertices);
+    glBufferSubData(GL_ARRAY_BUFFER, sizeof(vec4) * num_vertices, sizeof(vec2) * num_vertices, tex_coords);
 
     GLuint vPosition = glGetAttribLocation(program, "vPosition");
     glEnableVertexAttribArray(vPosition);
     glVertexAttribPointer(vPosition, 4, GL_FLOAT, GL_FALSE, 0, (GLvoid *) 0);
 
-    GLuint vColor = glGetAttribLocation(program, "vColor");
-    glEnableVertexAttribArray(vColor);  
+    GLuint vTexCoord = glGetAttribLocation(program, "vTexCoord");
+    glEnableVertexAttribArray(vTexCoord);
+    glVertexAttribPointer(vTexCoord, 2, GL_FLOAT, GL_FALSE, 0, (GLvoid *) (sizeof(vec4) * num_vertices));
 
-   
-    glVertexAttribPointer(vColor, 4, GL_FLOAT, GL_FALSE, 0, (GLvoid *) sizeof(vertices));
-   
+    GLuint texture_location = glGetUniformLocation(program, "texture");
+    glUniform1i(texture_location, 0);
+
     ctm_location = glGetUniformLocation(program, "ctm");
 
     glEnable(GL_DEPTH_TEST);
