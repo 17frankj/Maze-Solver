@@ -6,10 +6,12 @@ attribute vec2 vTexCoord;
 
 varying vec2 texCoord;
 
+uniform mat4 model_view_matrix;
+uniform mat4 projection_matrix;
 uniform mat4 ctm;
 
 void main()
 {
 	texCoord = vTexCoord;
-	gl_Position = ctm * vPosition;
+	gl_Position = projection_matrix * model_view_matrix * ctm * vPosition;
 }

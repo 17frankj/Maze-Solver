@@ -121,6 +121,9 @@ mat4 my_ctm = {{1,0,0,0},{0,1,0,0}, {0,0,1,0}, {0,0,0,1}};  // initial identity 
 
 // converstions to open gl types
 GLuint ctm_location;  
+GLuint mv_loc;
+GLuint pr_loc;
+
 GLuint program;
 GLuint vbo;
 
@@ -533,6 +536,64 @@ void make_shape_smaller(void)
 // -------------------------- end object funcitons  ---------------------------------------------------------------------------------//
 
 
+// -------------------------- viewing functions -------------------------------------------------------------------------------------//
+
+mat4 look_at(vec4 eyePoint, vec4 atPoint, vec4 upVector)
+{
+    // 1. Compute the camera axes
+    vec4 f = vec_Normalized((vec4){atPoint.x - eyePoint.x,
+                                   atPoint.y - eyePoint.y,
+                                   atPoint.z - eyePoint.z,
+                                   0.0}); // forward
+    vec4 s = vec_Normalized(vec_Cross_Product(f, upVector));  // right
+    vec4 u = vec_Cross_Product(s, f);                   // true up
+
+    // 2. Build column-major look-at matrix
+    mat4 M = {
+        { s.x,  u.x, -f.x, 0.0 },
+        { s.y,  u.y, -f.y, 0.0 },
+        { s.z,  u.z, -f.z, 0.0 },
+        { -vec_Dot_product(s, eyePoint),
+          -vec_Dot_product(u, eyePoint),
+           vec_Dot_product(f, eyePoint),
+           1.0 }
+    };
+
+    return M;
+}
+
+mat4 ortho(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat near, GLfloat far)
+{
+    mat4 M = 
+    {
+        {2.0f / (right - left), 0.0, 0.0, 0.0},
+        {0.0, 2.0f / (top - bottom), 0.0, 0.0},
+        {0.0, 0.0, -2.0f / (far - near), 0.0},
+        {-(right + left) / (right - left),
+         -(top + bottom) / (top - bottom),
+         -(far + near) / (far - near),
+         1.0}
+    };
+    return M;
+}
+
+mat4 frustum(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat near, GLfloat far)
+{
+    mat4 N = 
+    {
+        {1.0f, 0.0f, 0.0f, 0.0f},                          // x scale
+        {0.0f, 1.0f, 0.0f, 0.0f},                          // y scale
+        {0.0f, 0.0f, (near + far) / (far - near), -1.0f}, // z scale & -1 for perspective
+        {0.0f, 0.0f, -(2.0f * near * far) / (far - near), 0.0f} // z translation
+    };
+    return N;
+}
+
+
+
+// -------------------------- end viewing functions -------------------------------------------------------------------------------------//
+
+
 // ---------------Open Gl Functions  --------------------------------------------------------------------------------- // 
 void init(void)
 {
@@ -592,6 +653,8 @@ void init(void)
     glUniform1i(texture_location, 0);
 
     ctm_location = glGetUniformLocation(program, "ctm");
+    mv_loc = glGetUniformLocation(program, "model_view_matrix");
+    pr_loc = glGetUniformLocation(program, "projection_matrix");
 
     glEnable(GL_DEPTH_TEST);
     glClearColor(0.0, 0.0, 0.0, 1.0);
@@ -602,14 +665,44 @@ void display(void)
 {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    float mazeW = 8;
+    float mazeH = 8;
+    float camH  = 10.0f;  // height above maze
+    float margin = 1.0f;  // extra space around maze
+
+    float mazeCenterX = mazeW / 2.0f; // 4
+    float mazeCenterZ = mazeH / 2.0f; // 4
+
+    vec4 eye = {mazeW/2.0f, camH, mazeH/2.0f, 1.0f};   // above center
+    vec4 at  = {mazeW/2.0f, 0.0f, mazeH/2.0f, 1.0f};    // look at center on ground
+    vec4 up  = {0.0f, 0.0f, 1.0f, 0.0f};
+
+    mat4 model_view = look_at(eye, at, up);
+
+    float halfWidth  = mazeW / 2.0f;
+    float halfHeight = mazeH / 2.0f;
+
+    float left   = -6;
+    float right  = 6;
+    float bottom = -6;
+    float top    = 6;
+    float near   = 0.1f;
+    float far    = camH + 10.0f;
+
+    mat4 projection = ortho(left, right, bottom, top, near, far);
+    
+    //mat4 projection = ortho(-1.0, 1.0, -1.0, 1.0, -100.0, 100.0);
+                           //top bottom right left near   far
+
+    glUniformMatrix4fv(mv_loc, 1, GL_FALSE, (GLfloat*)&model_view);
+    glUniformMatrix4fv(pr_loc, 1, GL_FALSE, (GLfloat*)&projection);
+    glUniformMatrix4fv(ctm_location, 1, GL_FALSE, (GLfloat*)&my_ctm);
+
+    // --- DRAW ---
     glPolygonMode(GL_FRONT, GL_FILL);
     glPolygonMode(GL_BACK, GL_LINE);
 
-    glUniformMatrix4fv(ctm_location, 1, GL_FALSE, (GLfloat *) &my_ctm);
-
-    
     glDrawArrays(GL_TRIANGLES, 0, num_vertices);
-  
 
     glutSwapBuffers();
 }
@@ -804,7 +897,7 @@ int main(int argc, char **argv)
 {
     // inital parameters 
     glutInit(&argc, argv);
-    glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
     glutInitWindowSize(800, 800);
     glutInitWindowPosition(100,100);
     glutCreateWindow("Maze Solver");
