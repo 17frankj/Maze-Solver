@@ -131,6 +131,19 @@ GLuint vbo;
 int maze_height = 8;
 int maze_width = 8; 
 
+// camera global variables
+vec4 eye;
+vec4 at;
+vec4 up;
+
+// inital fustrum values
+float left   = -6;
+float right  = 6;
+float bottom = -6;
+float top    = 6;
+float near   = 8.0f;
+float far    = 20.0f;
+
 // msc global variables
 int stl_value = 0;    // change this to swap between stl and basic object for memory allocation
 float current_scale = 1;
@@ -579,14 +592,40 @@ mat4 ortho(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat nea
 
 mat4 frustum(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat near, GLfloat far)
 {
-    mat4 N = 
-    {
-        {1.0f, 0.0f, 0.0f, 0.0f},                          // x scale
-        {0.0f, 1.0f, 0.0f, 0.0f},                          // y scale
-        {0.0f, 0.0f, (near + far) / (far - near), -1.0f}, // z scale & -1 for perspective
-        {0.0f, 0.0f, -(2.0f * near * far) / (far - near), 0.0f} // z translation
+    /*
+    mat4 P = {
+        {(-2.0f * near) / (right - left), 0.0f, 0.0f, 0.0f},
+        {0.0f, (-2.0f * near) / (top - bottom), 0.0f, 0.0f},
+        {(right + left) / (right - left), (top + bottom) / (top - bottom), (far + near) / (far - near), -1.0f},
+        {0.0f, 0.0f, -((2.0f * near * far) / (far - near)), 0.0f}
     };
-    return N;
+
+    return P;
+    */
+   mat4 P = {
+        // column 0
+        { (2.0f*near)/(right-left),
+          0.0f,
+          0.0f,
+          0.0f },
+        // column 1
+        { 0.0f,
+          (2.0f*near)/(top-bottom),
+          0.0f,
+          0.0f },
+        // column 2
+        { (right+left)/(right-left),
+          (top+bottom)/(top-bottom),
+          -(far+near)/(far-near),
+          -1.0f },
+        // column 3
+        { 0.0f,
+          0.0f,
+          -(2.0f*near*far)/(far-near),
+          0.0f }
+    };
+    return P;
+
 }
 
 
@@ -667,32 +706,16 @@ void display(void)
 
     float mazeW = 8;
     float mazeH = 8;
-    float camH  = 10.0f;  // height above maze
-    float margin = 1.0f;  // extra space around maze
 
-    float mazeCenterX = mazeW / 2.0f; // 4
-    float mazeCenterZ = mazeH / 2.0f; // 4
-
-    vec4 eye = {mazeW/2.0f, camH, mazeH/2.0f, 1.0f};   // above center
-    vec4 at  = {mazeW/2.0f, 0.0f, mazeH/2.0f, 1.0f};    // look at center on ground
-    vec4 up  = {0.0f, 0.0f, 1.0f, 0.0f};
+    // set initial center camera eye values
+    eye = (vec4){mazeW/2.0f, 10.0f, mazeH/2.0f, 1.0f};   // above center
+    at  = (vec4){mazeW/2.0f, 0.0f, mazeH/2.0f, 1.0f};    // look at center on ground
+    up  = (vec4){0.0f, 0.0f, -1.0f, 0.0f};
+                        //    ^ changes if looking at front or back of maze with -1 or 1
 
     mat4 model_view = look_at(eye, at, up);
-
-    float halfWidth  = mazeW / 2.0f;
-    float halfHeight = mazeH / 2.0f;
-
-    float left   = -6;
-    float right  = 6;
-    float bottom = -6;
-    float top    = 6;
-    float near   = 0.1f;
-    float far    = camH + 10.0f;
-
-    mat4 projection = ortho(left, right, bottom, top, near, far);
-    
-    //mat4 projection = ortho(-1.0, 1.0, -1.0, 1.0, -100.0, 100.0);
-                           //top bottom right left near   far
+    mat4 projection = frustum(left, right, bottom, top, near, far);
+    //mat4 projection = ortho(left, right, bottom, top, near, far); // debugging
 
     glUniformMatrix4fv(mv_loc, 1, GL_FALSE, (GLfloat*)&model_view);
     glUniformMatrix4fv(pr_loc, 1, GL_FALSE, (GLfloat*)&projection);
