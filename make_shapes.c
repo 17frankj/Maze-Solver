@@ -169,13 +169,20 @@ const float mazeW = 8.0f;
 const float mazeH = 8.0f;
 vec4 maze_center = {mazeW/2.0f, 0.0f, mazeH/2.0f, 1.0f};
 
+// flying down global variables
+vec4 starting_at;
+vec4 changing_at;
+
 // inital fustrum values
-float left   = -6;
-float right  = 6;
-float bottom = -6;
-float top    = 6;
-float near   = 8.0f;
-float far    = 20.0f;
+
+float near   = 0.5f;   // Moved closer so objects 2.5 units away are visible
+float far    = 2000.0f;
+
+// cale these down by 0.05 to maintain the same Field of View (Zoom)
+float left   = -0.3f;  // -6.0 * 0.05
+float right  = 0.3f;   //  6.0 * 0.05
+float bottom = -0.3f;  // -6.0 * 0.05
+float top    = 0.3f;   //  6.0 * 0.05
 
 // msc global variables
 int stl_value = 0;    // change this to swap between stl and basic object for memory allocation
@@ -243,7 +250,7 @@ void addFloorTile(float x, float z)
     // place a flat cube at y = -0.5 (same height as poles)
     // scale Y very small so it's a flat tile
     mat4 T = matrix_multi(
-                matrix_translation(x, -0.5f, z),
+                matrix_translation(x, -1.0f, z),
                 matrix_scaling(1.0f, 0.05f, 1.0f) // thin plane
             );
 
@@ -729,7 +736,7 @@ void init(void)
 
     glEnable(GL_DEPTH_TEST);
     glClearColor(0.0, 0.0, 0.0, 1.0);
-    glDepthRange(1,0);
+    glDepthRange(0,1);
 }
 
 void display(void)
@@ -744,7 +751,7 @@ void display(void)
         // set initial center camera eye values
         eye = (vec4){mazeW/2.0f, 10.0f, mazeH/2.0f, 1.0f};   // above center
         at  = (vec4){mazeW/2.0f, 0.0f, mazeH/2.0f, 1.0f};    // look at center on ground
-        up  = (vec4){0.0f, 0.0f, -1.0f, 0.0f};
+        up  = (vec4){0.0f, 0.0f, 1.0f, 0.0f};
                             //    ^ changes if looking at front or back of maze with -1 or 1
     }
     //printf("Eye: (%f, %f, %f)\n", eye.x, eye.y, eye.z);
@@ -825,41 +832,75 @@ void idle(void)
 
             if(current_step > max_steps) // reached end of animation
             {
-                isAnimating = 0; // turn off animation
-                currentState = NONE; // Reset state
-                alpha = 1.0; // set to final value
+                currentState = FLYING_DOWN; // go to next state
+                current_step = 0;
+                max_steps = 2000; // Take 300 frames to fly down
+
+                starting_eye = eye; 
+                starting_at = at;   // Currently looking at maze_center
+
+                vec4 target_eye = (vec4){0.0f, 0.5f, -2.5f, 1.0f}; // Define where to go
+
+                // Calculate vector to get there
+                changing_eye.x = target_eye.x - starting_eye.x;
+                changing_eye.y = target_eye.y - starting_eye.y;
+                changing_eye.z = target_eye.z - starting_eye.z;
+
+                vec4 target_at = (vec4){0.0f, 0.5f, 10.0f, 1.0f}; // Look at maze entrance
+
+                // Calculate vector to get there
+                changing_at.x = target_at.x - starting_at.x;
+                changing_at.y = target_at.y - starting_at.y;
+                changing_at.z = target_at.z - starting_at.z;
 
             }
             else
             {
-                alpha = (float)current_step / (float)max_steps;
+                alpha = (float)current_step / (float)max_steps; //
 
-                // current_something = (alpha * changing_vector) + starting; 
-                // calculate new transformation(s)
+                // Current Angle = Start + (PercentComplete * TotalRotation)
+                float current_theta = starting_angle + (alpha * changing_angle);
+
+                // Current Height = StartHeight + (PercentComplete * HeightChange)
+                float current_height = starting_eye.y + (alpha * changing_eye.y);
+
+                // --- 2. Calculate New Eye Position using Polar Coordinates ---
+                // x = center_x + radius * cos(theta)
+                // z = center_z + radius * sin(theta)
+                
+                eye.x = maze_center.x + (orbit_radius * cosf(current_theta));
+                eye.z = maze_center.z + (orbit_radius * sinf(current_theta));
+                eye.y = current_height;
+                eye.w = 1.0f;
+
+                // --- 3. Ensure we keep looking at the center ---
+                at = maze_center;
             }
-
-            // Current Angle = Start + (PercentComplete * TotalRotation)
-            float current_theta = starting_angle + (alpha * changing_angle);
-
-            // Current Height = StartHeight + (PercentComplete * HeightChange)
-            float current_height = starting_eye.y + (alpha * changing_eye.y);
-
-            // --- 2. Calculate New Eye Position using Polar Coordinates ---
-            // x = center_x + radius * cos(theta)
-            // z = center_z + radius * sin(theta)
-            
-            eye.x = maze_center.x + (orbit_radius * cosf(current_theta));
-            eye.z = maze_center.z + (orbit_radius * sinf(current_theta));
-            eye.y = current_height;
-            eye.w = 1.0f;
-
-            // --- 3. Ensure we keep looking at the center ---
-            at = maze_center;
         }
     
         else if(currentState == FLYING_DOWN) 
         {
-        
+            if(current_step > max_steps) 
+            {
+                isAnimating = 0; 
+                currentState = LOOK_DOWN; // Animation Sequence Complete
+                // Here you could trigger the next state (WALK_FORWARD) if you wanted
+            }
+            else
+            {
+                // Calculate Interpolation Alpha
+                float alpha = (float)current_step / (float)max_steps;
+
+                // 1. Interpolate Eye Position (Move from Sky to Ground)
+                eye.x = starting_eye.x + (alpha * changing_eye.x);
+                eye.y = starting_eye.y + (alpha * changing_eye.y);
+                eye.z = starting_eye.z + (alpha * changing_eye.z);
+
+                // 2. Interpolate Look-At Point (Shift focus from Center to Entrance)
+                at.x = starting_at.x + (alpha * changing_at.x);
+                at.y = starting_at.y + (alpha * changing_at.y);
+                at.z = starting_at.z + (alpha * changing_at.z);
+            }
         }
         else if(currentState == WALK_FORWARD) 
         {
