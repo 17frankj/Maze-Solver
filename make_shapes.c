@@ -839,7 +839,8 @@ void idle(void)
                 starting_eye = eye; 
                 starting_at = at;   // Currently looking at maze_center
 
-                vec4 target_eye = (vec4){0.0f, 0.5f, -2.5f, 1.0f}; // Define where to go
+                vec4 target_eye = (vec4){0.0f, 0.0f, -1.5f, 1.0f}; // Define where to go
+                                                    //  ^ changes how far in
 
                 // Calculate vector to get there
                 changing_eye.x = target_eye.x - starting_eye.x;
