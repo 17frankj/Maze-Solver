@@ -34,7 +34,7 @@
 #define TEX_STONE 2
 #define TEX_GRASS 3
 #define MAX_VERTS 110000
-
+#define TWO_PI (2.0 * M_PI)
 
 vec2 tex_face[6] = {
     {0.0f, 1.0f}, // bottom-left
@@ -135,6 +135,39 @@ int maze_width = 8;
 vec4 eye;
 vec4 at;
 vec4 up;
+
+// animation global variables
+typedef enum
+{
+    NONE = 0,
+    ORBIT_ONCE,
+    FLYING_UP,
+    FLYING_DOWN,
+    WALK_FORWARD,
+    WALK_BACKWARD,
+    TURN_LEFT,
+    TURN_RIGHT,
+    LOOK_UP,
+    LOOK_DOWN,
+} state;
+state currentState = NONE;
+int isAnimating = NONE; // checks for animation running
+int current_step = 0;
+int max_steps;
+
+// flying around global variables
+vec4 starting_eye;
+vec4 changing_eye;
+
+float starting_angle;
+float changing_angle;
+
+float orbit_radius;
+float orbit_height;
+
+const float mazeW = 8.0f;
+const float mazeH = 8.0f;
+vec4 maze_center = {mazeW/2.0f, 0.0f, mazeH/2.0f, 1.0f};
 
 // inital fustrum values
 float left   = -6;
@@ -629,7 +662,6 @@ mat4 frustum(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat n
 }
 
 
-
 // -------------------------- end viewing functions -------------------------------------------------------------------------------------//
 
 
@@ -704,15 +736,18 @@ void display(void)
 {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    float mazeW = 8;
-    float mazeH = 8;
+    //float mazeW = 8;
+    //float mazeH = 8;
 
-    // set initial center camera eye values
-    eye = (vec4){mazeW/2.0f, 10.0f, mazeH/2.0f, 1.0f};   // above center
-    at  = (vec4){mazeW/2.0f, 0.0f, mazeH/2.0f, 1.0f};    // look at center on ground
-    up  = (vec4){0.0f, 0.0f, -1.0f, 0.0f};
-                        //    ^ changes if looking at front or back of maze with -1 or 1
-
+    if(!isAnimating &&currentState == NONE)
+    {
+        // set initial center camera eye values
+        eye = (vec4){mazeW/2.0f, 10.0f, mazeH/2.0f, 1.0f};   // above center
+        at  = (vec4){mazeW/2.0f, 0.0f, mazeH/2.0f, 1.0f};    // look at center on ground
+        up  = (vec4){0.0f, 0.0f, -1.0f, 0.0f};
+                            //    ^ changes if looking at front or back of maze with -1 or 1
+    }
+    //printf("Eye: (%f, %f, %f)\n", eye.x, eye.y, eye.z);
     mat4 model_view = look_at(eye, at, up);
     mat4 projection = frustum(left, right, bottom, top, near, far);
     //mat4 projection = ortho(left, right, bottom, top, near, far); // debugging
@@ -745,8 +780,115 @@ void keyboard(unsigned char key, int mousex, int mousey)
         case 'q': // quit application
             glutLeaveMainLoop();
             break;
+        case 's': // start intro animation
+            isAnimating = 1;
+            currentState = FLYING_UP;  // start flying animation
+
+            max_steps = 2000;          // set max steps for flying up
+            current_step = 0;        // reset current step
+
+            // Maze center:
+            maze_center = (vec4){mazeW/2.0f, 0.0f, mazeH/2.0f, 1.0f};
+            at = maze_center; 
+            
+            up = (vec4){0.0f, 1.0f, 0.0f, 0.0f}; 
+
+            orbit_radius = 15.0f;
+            starting_angle = -1.57f; //  Start at -PI/2
+            changing_angle = 6.28f; //  Full circle 2*PI
+
+
+            // --- FLY UP ANIMATION SETUP ---
+            starting_eye = (vec4){0.0f, 1.0f, 0.0f, 1.0f}; // Start height at Y=2
+            changing_eye = (vec4){0.0f, 15.0f, 0.0f, 0.0f}; // We will add 15 to height by the end
+
+            break;
     }
     glutPostRedisplay();
+}
+
+// call idle function to do animation
+void idle(void)
+{
+    if (isAnimating)
+    {
+        current_step++;
+
+        if(currentState == NONE) 
+        {
+            
+        }
+
+        else if(currentState == FLYING_UP) 
+        {
+            float alpha; // current_state / max_steps
+
+            if(current_step > max_steps) // reached end of animation
+            {
+                isAnimating = 0; // turn off animation
+                currentState = NONE; // Reset state
+                alpha = 1.0; // set to final value
+
+            }
+            else
+            {
+                alpha = (float)current_step / (float)max_steps;
+
+                // current_something = (alpha * changing_vector) + starting; 
+                // calculate new transformation(s)
+            }
+
+            // Current Angle = Start + (PercentComplete * TotalRotation)
+            float current_theta = starting_angle + (alpha * changing_angle);
+
+            // Current Height = StartHeight + (PercentComplete * HeightChange)
+            float current_height = starting_eye.y + (alpha * changing_eye.y);
+
+            // --- 2. Calculate New Eye Position using Polar Coordinates ---
+            // x = center_x + radius * cos(theta)
+            // z = center_z + radius * sin(theta)
+            
+            eye.x = maze_center.x + (orbit_radius * cosf(current_theta));
+            eye.z = maze_center.z + (orbit_radius * sinf(current_theta));
+            eye.y = current_height;
+            eye.w = 1.0f;
+
+            // --- 3. Ensure we keep looking at the center ---
+            at = maze_center;
+        }
+    
+        else if(currentState == FLYING_DOWN) 
+        {
+        
+        }
+        else if(currentState == WALK_FORWARD) 
+        {
+        
+        }
+        else if(currentState == WALK_BACKWARD) 
+        {
+        
+        }
+        else if(currentState == TURN_LEFT) 
+        {
+        
+        }
+        else if(currentState == TURN_RIGHT) 
+        {
+        
+        }
+        else if(currentState == LOOK_UP) 
+        {
+        
+        }
+        else if(currentState == LOOK_DOWN) 
+        {
+        
+        }
+        // printf("Animating...\n");
+        glutPostRedisplay();
+    }
+    //glutPostRedisplay();
 }
 
 // return 1 if pointer at (glx,gly) is over the object
@@ -936,6 +1078,7 @@ int main(int argc, char **argv)
     glutKeyboardFunc(keyboard);
     glutMouseFunc(mouse);
     glutMotionFunc(motion);
+    glutIdleFunc(idle);
     glutMainLoop();
 
     return 0;
