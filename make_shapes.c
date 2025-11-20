@@ -172,6 +172,13 @@ vec4 maze_center = {mazeW/2.0f, 0.0f, mazeH/2.0f, 1.0f};
 // flying down global variables
 vec4 starting_at;
 vec4 changing_at;
+vec4 target_at;
+
+// moving animation global variables
+float dx;
+float dz;
+float magnitude;
+float step_size;
 
 // inital fustrum values
 
@@ -787,7 +794,7 @@ void keyboard(unsigned char key, int mousex, int mousey)
         case 'q': // quit application
             glutLeaveMainLoop();
             break;
-        case 's': // start intro animation
+        case 't': // start intro animation
             isAnimating = 1;
             currentState = FLYING_UP;  // start flying animation
 
@@ -809,6 +816,74 @@ void keyboard(unsigned char key, int mousex, int mousey)
             starting_eye = (vec4){0.0f, 1.0f, 0.0f, 1.0f}; // Start height at Y=2
             changing_eye = (vec4){0.0f, 15.0f, 0.0f, 0.0f}; // We will add 15 to height by the end
 
+            break;
+        case 'w': // walk forward
+            isAnimating = 1;
+            currentState = WALK_FORWARD;  // start forward animation
+
+            max_steps = 100;          // set max steps 
+            current_step = 0;        // reset current step
+
+            // 1. Capture Start Points
+            starting_eye = eye;
+            starting_at = at;
+
+            // 2. Calculate Forward Vector (Where are we looking?)
+            // Direction = At - Eye
+            dx = at.x - eye.x;
+            dz = at.z - eye.z;
+
+            // 3. Normalize (Make length 1.0)
+            // We ignore Y so we walk flat on the ground
+            magnitude = sqrtf(dx*dx + dz*dz);
+            if (magnitude == 0) magnitude = 1.0f; // Safety check
+
+            step_size = 1.0f; // Move 1 cube unit
+
+            // 4. Set Changing Vectors
+            // Move Eye forward
+            changing_eye.x = (dx / magnitude) * step_size;
+            changing_eye.y = 0.0f; // Don't change height while walking
+            changing_eye.z = (dz / magnitude) * step_size;
+
+            // Move Look-At point by the SAME amount 
+            // (This keeps the camera rotation locked, looking in the same direction)
+            changing_at = changing_eye;
+            changing_at.z = target_at.z - starting_at.z;
+            break;
+        case 's': // walk backward
+            // similar to walk forward but reverse direction
+            isAnimating = 1;
+            currentState = WALK_BACKWARD;  // start backwards animation
+
+            max_steps = 100;          // set max steps 
+            current_step = 0;        // reset current step
+
+            // 1. Capture Start Points
+            starting_eye = eye;
+            starting_at = at;
+
+            // 2. Calculate backward Vector (Where are we looking?)
+            // Direction = At - Eye
+            dx = at.x - eye.x;
+            dz = at.z - eye.z;
+
+            // 3. Normalize (Make length 1.0)
+            // We ignore Y so we walk flat on the ground
+            magnitude = sqrtf(dx*dx + dz*dz);
+            if (magnitude == 0) magnitude = 1.0f; // Safety check
+
+            step_size = 1.0f; // Move 1 cube unit
+
+            // 4. Set Changing Vectors
+            // Move Eye backward
+            changing_eye.x = -(dx / magnitude) * step_size;
+            changing_eye.y = 0.0f; // Don't change height while walking
+            changing_eye.z = -(dz / magnitude) * step_size;
+
+            // Move Look-At point by the SAME amount 
+            // (This keeps the camera rotation locked, looking in the same direction)
+            changing_at = changing_eye;
             break;
     }
     glutPostRedisplay();
@@ -834,7 +909,7 @@ void idle(void)
             {
                 currentState = FLYING_DOWN; // go to next state
                 current_step = 0;
-                max_steps = 2000; // Take 300 frames to fly down
+                max_steps = 1000; // Take 1000 frames to fly down
 
                 starting_eye = eye; 
                 starting_at = at;   // Currently looking at maze_center
@@ -847,7 +922,7 @@ void idle(void)
                 changing_eye.y = target_eye.y - starting_eye.y;
                 changing_eye.z = target_eye.z - starting_eye.z;
 
-                vec4 target_at = (vec4){0.0f, 0.5f, 10.0f, 1.0f}; // Look at maze entrance
+                target_at = (vec4){0.0f, 0.5f, 10.0f, 1.0f}; // Look at maze entrance
 
                 // Calculate vector to get there
                 changing_at.x = target_at.x - starting_at.x;
@@ -879,13 +954,12 @@ void idle(void)
             }
         }
     
-        else if(currentState == FLYING_DOWN) 
+        else if(currentState == FLYING_DOWN || currentState == WALK_FORWARD || currentState == WALK_BACKWARD) 
         {
             if(current_step > max_steps) 
             {
                 isAnimating = 0; 
                 currentState = LOOK_DOWN; // Animation Sequence Complete
-                // Here you could trigger the next state (WALK_FORWARD) if you wanted
             }
             else
             {
@@ -902,14 +976,6 @@ void idle(void)
                 at.y = starting_at.y + (alpha * changing_at.y);
                 at.z = starting_at.z + (alpha * changing_at.z);
             }
-        }
-        else if(currentState == WALK_FORWARD) 
-        {
-        
-        }
-        else if(currentState == WALK_BACKWARD) 
-        {
-        
         }
         else if(currentState == TURN_LEFT) 
         {
