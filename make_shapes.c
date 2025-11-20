@@ -982,6 +982,9 @@ void keyboard(unsigned char key, int mousex, int mousey)
             // -PI/2 = -90 degrees (Right turn)
             changing_angle = M_PI / 2.0f;
             break;
+        case 'y': // solve maze
+            // implement later
+            break;
     }
     glutPostRedisplay();
 }
