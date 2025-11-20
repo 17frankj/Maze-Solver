@@ -147,6 +147,8 @@ typedef enum
     WALK_BACKWARD,
     TURN_LEFT,
     TURN_RIGHT,
+    SIDE_STEP_LEFT,
+    SIDE_STEP_RIGHT,
     LOOK_UP,
     LOOK_DOWN,
 } state;
@@ -885,6 +887,74 @@ void keyboard(unsigned char key, int mousex, int mousey)
             // (This keeps the camera rotation locked, looking in the same direction)
             changing_at = changing_eye;
             break;
+        case 'x': // strafe right
+            // similar to walk forward but reverse direction
+            isAnimating = 1;
+            currentState = SIDE_STEP_RIGHT;  // start right animation
+
+            max_steps = 100;          // set max steps 
+            current_step = 0;        // reset current step
+
+            // 1. Capture Start Points
+            starting_eye = eye;
+            starting_at = at;
+
+            // 2. Calculate left Vector (Where are we looking?)
+            // Direction = At - Eye
+            dx = at.x - eye.x;
+            dz = at.z - eye.z;
+
+            // 3. Normalize (Make length 1.0)
+            // We ignore Y so we walk flat on the ground
+            magnitude = sqrtf(dx*dx + dz*dz);
+            if (magnitude == 0) magnitude = 1.0f; // Safety check
+
+            step_size = 1.0f; // Move 1 cube unit
+
+            // 4. Set Changing Vectors
+            // Move Eye left
+            changing_eye.x = -(dz / magnitude) * step_size;
+            changing_eye.y = 0.0f; // Don't change height while walking
+            changing_eye.z = (dx / magnitude) * step_size;
+
+            // Move Look-At point by the SAME amount 
+            // (This keeps the camera rotation locked, looking in the same direction)
+            changing_at = changing_eye;
+            break;
+        case 'z': // strafe left
+            // similar to walk forward but reverse direction
+            isAnimating = 1;
+            currentState = SIDE_STEP_LEFT;  // start left animation
+
+            max_steps = 100;          // set max steps 
+            current_step = 0;        // reset current step
+
+            // 1. Capture Start Points
+            starting_eye = eye;
+            starting_at = at;
+
+            // 2. Calculate left Vector (Where are we looking?)
+            // Direction = At - Eye
+            dx = at.x - eye.x;
+            dz = at.z - eye.z;
+
+            // 3. Normalize (Make length 1.0)
+            // We ignore Y so we walk flat on the ground
+            magnitude = sqrtf(dx*dx + dz*dz);
+            if (magnitude == 0) magnitude = 1.0f; // Safety check
+
+            step_size = 1.0f; // Move 1 cube unit
+
+            // 4. Set Changing Vectors
+            // Move Eye left
+            changing_eye.x = (dz / magnitude) * step_size;
+            changing_eye.y = 0.0f; // Don't change height while walking
+            changing_eye.z = -(dx / magnitude) * step_size;
+
+            // Move Look-At point by the SAME amount 
+            // (This keeps the camera rotation locked, looking in the same direction)
+            changing_at = changing_eye;
+            break;
     }
     glutPostRedisplay();
 }
@@ -954,7 +1024,7 @@ void idle(void)
             }
         }
     
-        else if(currentState == FLYING_DOWN || currentState == WALK_FORWARD || currentState == WALK_BACKWARD) 
+        else if(currentState == FLYING_DOWN || currentState == WALK_FORWARD || currentState == WALK_BACKWARD || currentState == SIDE_STEP_LEFT || currentState == SIDE_STEP_RIGHT) 
         {
             if(current_step > max_steps) 
             {
