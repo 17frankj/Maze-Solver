@@ -184,14 +184,15 @@ float step_size;
 
 // inital fustrum values
 
-float near   = 0.5f;   // Moved closer so objects 2.5 units away are visible
+float near   = 0.2f;   // Moved closer so objects 2.5 units away are visible
 float far    = 2000.0f;
 
-// cale these down by 0.05 to maintain the same Field of View (Zoom)
-float left   = -0.3f;  // -6.0 * 0.05
-float right  = 0.3f;   //  6.0 * 0.05
-float bottom = -0.3f;  // -6.0 * 0.05
-float top    = 0.3f;   //  6.0 * 0.05
+// Maintain FOV ratio: (0.3 / 0.5) = 0.6
+// New value: 0.1 * 0.6 = 0.06
+float left   = -0.12f;  
+float right  = 0.12f;   
+float bottom = -0.12f;  
+float top    = 0.12f;
 
 // msc global variables
 int stl_value = 0;    // change this to swap between stl and basic object for memory allocation
@@ -851,7 +852,7 @@ void keyboard(unsigned char key, int mousex, int mousey)
             // Move Look-At point by the SAME amount 
             // (This keeps the camera rotation locked, looking in the same direction)
             changing_at = changing_eye;
-            changing_at.z = target_at.z - starting_at.z;
+            //changing_at.z = target_at.z - starting_at.z;
             break;
         case 's': // walk backward
             // similar to walk forward but reverse direction
@@ -887,7 +888,7 @@ void keyboard(unsigned char key, int mousex, int mousey)
             // (This keeps the camera rotation locked, looking in the same direction)
             changing_at = changing_eye;
             break;
-        case 'x': // strafe right
+        case 'd': // strafe right
             // similar to walk forward but reverse direction
             isAnimating = 1;
             currentState = SIDE_STEP_RIGHT;  // start right animation
@@ -921,7 +922,7 @@ void keyboard(unsigned char key, int mousex, int mousey)
             // (This keeps the camera rotation locked, looking in the same direction)
             changing_at = changing_eye;
             break;
-        case 'z': // strafe left
+        case 'a': // strafe left
             // similar to walk forward but reverse direction
             isAnimating = 1;
             currentState = SIDE_STEP_LEFT;  // start left animation
@@ -955,6 +956,32 @@ void keyboard(unsigned char key, int mousex, int mousey)
             // (This keeps the camera rotation locked, looking in the same direction)
             changing_at = changing_eye;
             break;
+        case 'z': // turn left
+            isAnimating = 1;
+            currentState = TURN_LEFT; 
+            max_steps = 100; // Fast turn
+            current_step = 0;
+
+            starting_eye = eye;
+            starting_at = at; 
+
+            // We use changing_angle for rotation amount
+            // PI/2 = 90 degrees (Left turn)
+            changing_angle = M_PI / 2.0f;
+            break;
+        case 'x': // turn right
+            isAnimating = 1;
+            currentState = TURN_RIGHT; 
+            max_steps = 100; // Fast turn
+            current_step = 0;
+
+            starting_eye = eye;
+            starting_at = at; 
+
+            // We use changing_angle for rotation amount
+            // -PI/2 = -90 degrees (Right turn)
+            changing_angle = M_PI / 2.0f;
+            break;
     }
     glutPostRedisplay();
 }
@@ -984,7 +1011,7 @@ void idle(void)
                 starting_eye = eye; 
                 starting_at = at;   // Currently looking at maze_center
 
-                vec4 target_eye = (vec4){0.0f, 0.0f, -1.5f, 1.0f}; // Define where to go
+                vec4 target_eye = (vec4){0.0f, 0.0f, -2.0f, 1.0f}; // Define where to go
                                                     //  ^ changes how far in
 
                 // Calculate vector to get there
@@ -1030,6 +1057,22 @@ void idle(void)
             {
                 isAnimating = 0; 
                 currentState = LOOK_DOWN; // Animation Sequence Complete
+
+                /*
+                // take the current look vector and snap it too
+                float lookX = at.x - eye.x;
+                float lookZ = at.z - eye.z;
+                float len_2 = sqrtf(lookX*lookX + lookZ*lookZ);
+
+                if(fabs(lookX) > fabs(lookZ)) {
+                    at.x = eye.x + (lookX > 0 ? len_2 : -len_2);
+                    at.z = eye.z;
+                } else {
+                    at.x = eye.x;
+                    at.z = eye.z + (lookZ > 0 ? len_2 : -len_2);
+                }
+                    */
+                
             }
             else
             {
@@ -1049,11 +1092,67 @@ void idle(void)
         }
         else if(currentState == TURN_LEFT) 
         {
-        
+            if(current_step > max_steps)
+            {
+                isAnimating = 0;
+                currentState = LOOK_DOWN; // Animation Complete
+
+            }
+            else
+            {
+                float alpha = (float)current_step / (float)max_steps;
+                
+                // Calculate the angle to rotate by based on progress
+                float theta = alpha * changing_angle; 
+
+                // 1. Get the original View Vector from the start of the animation
+                dx = starting_at.x - starting_eye.x;
+                dz = starting_at.z - starting_eye.z;
+
+                // 2. Apply 2D Rotation Formula (Turn Left)
+                // x' = x*cos(theta) + z*sin(theta)
+                // z' = -x*sin(theta) + z*cos(theta)
+                float dx_new = dx * cosf(theta) + dz * sinf(theta);
+                float dz_new = -dx * sinf(theta) + dz * cosf(theta);
+
+                // 3. Update 'at' by adding new vector to the stationary 'eye'
+                at.x = eye.x + dx_new;
+                at.z = eye.z + dz_new;
+                // Keep height the same
+                at.y = starting_at.y;
+            }
         }
         else if(currentState == TURN_RIGHT) 
         {
-        
+            if(current_step > max_steps)
+            {
+                isAnimating = 0;
+                currentState = LOOK_DOWN; // Animation Complete
+
+            }
+            else
+            {
+                float alpha = (float)current_step / (float)max_steps;
+                
+                // Calculate the angle to rotate by based on progress
+                float theta = alpha * changing_angle; 
+
+                // 1. Get the original View Vector from the start of the animation
+                dx = starting_at.x - starting_eye.x;
+                dz = starting_at.z - starting_eye.z;
+
+                // 2. Apply 2D Rotation Formula (Turn Right)
+                // x' = x*cos(theta) - z*sin(theta)
+                // z' = x*sin(theta) + z*cos(theta)
+                float dx_new = dx * cosf(theta) - dz * sinf(theta);
+                float dz_new = dx * sinf(theta) + dz * cosf(theta);
+
+                // 3. Update 'at' by adding new vector to the stationary 'eye'
+                at.x = eye.x + dx_new;
+                at.z = eye.z + dz_new;
+                // Keep height the same
+                at.y = starting_at.y;
+            }
         }
         else if(currentState == LOOK_UP) 
         {
