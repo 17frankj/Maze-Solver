@@ -402,6 +402,92 @@ void shuffle(int *arr, int n)
     }
 }
 
+// Helper to reverse the path array so it matches the format expected by idle()
+// (Goal at index 0, Start at index Length-1)
+void reverse_path_array() {
+    int start = 0;
+    int end = solution_length - 1;
+    while (start < end) {
+        PathNode temp = solution_path[start];
+        solution_path[start] = solution_path[end];
+        solution_path[end] = temp;
+        start++;
+        end--;
+    }
+}
+
+// Check if a specific wall is open relative to the cell
+int is_wall_blocking(Maze *m, int x, int y, int direction) {
+    // 0: North, 1: East, 2: South, 3: West
+    switch(direction) {
+        case 0: return m->cells[y][x].north;
+        case 1: return m->cells[y][x].east;
+        case 2: return m->cells[y][x].south;
+        case 3: return m->cells[y][x].west;
+    }
+    return 1; // Default to blocked
+}
+
+// Left-Hand Rule Algorithm
+int solve_left_hand_rule(Maze *m, int startX, int startY, int startDir, int goalX, int goalY) {
+    int x = startX;
+    int y = startY;
+    int dir = startDir; // 0=N, 1=E, 2=S, 3=W
+    
+    solution_length = 0;
+    
+    // Add start point
+    solution_path[solution_length++] = (PathNode){x, y};
+
+    // Safety limit to prevent infinite loops
+    int max_steps = 2000; 
+    
+    while ((x != goalX || y != goalY) && solution_length < max_steps) {
+        
+        // Relative directions based on current facing
+        int leftDir = (dir + 3) % 4;
+        int rightDir = (dir + 1) % 4;
+        int backDir = (dir + 2) % 4;
+
+        // Priority 1: Try turning Left
+        if (!is_wall_blocking(m, x, y, leftDir)) {
+            dir = leftDir;
+        } 
+        // Priority 2: Try going Straight
+        else if (!is_wall_blocking(m, x, y, dir)) {
+            // dir stays same
+        }
+        // Priority 3: Try turning Right
+        else if (!is_wall_blocking(m, x, y, rightDir)) {
+            dir = rightDir;
+        }
+        // Priority 4: Dead End, Turn Around
+        else {
+            dir = backDir;
+        }
+
+        // Move one step in the chosen direction
+        switch(dir) {
+            case 0: y--; break; // North
+            case 1: x++; break; // East
+            case 2: y++; break; // South
+            case 3: x--; break; // West
+        }
+
+        // Record step
+        solution_path[solution_length++] = (PathNode){x, y};
+    }
+
+    if (x == goalX && y == goalY) {
+        // The animation system expects the array to be [Goal, ..., Start]
+        // But we generated [Start, ..., Goal]. We must reverse it.
+        reverse_path_array();
+        return 1;
+    }
+
+    return 0; // Failed or too long
+}
+
 // Recursive function to find path from (x,y) to (goal_x, goal_y)
 int find_path_from(Maze *m, int x, int y, int goal_x, int goal_y) 
 {
@@ -1051,6 +1137,77 @@ void keyboard(unsigned char key, int mousex, int mousey)
         case 'y': // solve maze
             // implement later
             break;
+
+        case 'l': // L for "Left-Hand Rule"
+            if (!global_maze_ptr) break;
+
+            // 1. Get Current Position
+            int lh_startX = (int)roundf(eye.x);
+            int lh_startY = (int)roundf(eye.z);
+
+            // Constraint: Ignore if outside the maze
+            if (lh_startY < 0 || lh_startX < 0 || lh_startX >= global_maze_ptr->width) {
+                printf("Ignored: Outside maze boundaries.\n");
+                break;
+            }
+
+            // 2. Determine Current Facing Direction (0=N, 1=E, 2=S, 3=W)
+            // We use the vector (at - eye) to determine this.
+            float faceX = at.x - eye.x;
+            float faceZ = at.z - eye.z;
+            int startDir = 0;
+            
+            if (fabs(faceX) > fabs(faceZ)) {
+                startDir = (faceX > 0) ? 1 : 3; // East or West
+            } else {
+                startDir = (faceZ > 0) ? 2 : 0; // South or North
+            }
+
+            // 3. Solve using Left-Hand Rule
+            int lh_found = solve_left_hand_rule(global_maze_ptr, lh_startX, lh_startY, startDir, global_maze_ptr->width-1, global_maze_ptr->height-1);
+
+            if (lh_found) {
+                printf("Left-Hand Path found! Steps: %d\n", solution_length);
+                
+                isAnimating = 1;
+                currentState = SOLVE_WALK; 
+                solve_index = solution_length - 2; 
+                max_steps = 600; // 60 frames per step
+                current_step = 0;
+
+                // Snap eye to grid to align start
+                eye.x = (float)lh_startX;
+                eye.z = (float)lh_startY;
+
+                // Setup First Step Animation
+                starting_eye = eye;
+                starting_at = at;
+
+                PathNode nextNode = solution_path[solve_index];
+                vec4 target_eye = (vec4){(float)nextNode.x, eye.y, (float)nextNode.y, 1.0f};
+
+                changing_eye.x = target_eye.x - starting_eye.x;
+                changing_eye.y = 0.0f;
+                changing_eye.z = target_eye.z - starting_eye.z;
+
+                // Set View Target
+                float dirX = (float)nextNode.x - eye.x;
+                float dirZ = (float)nextNode.y - eye.z;
+                
+                vec4 final_at;
+                final_at.x = target_eye.x + dirX;
+                final_at.y = eye.y; 
+                final_at.z = target_eye.z + dirZ;
+                final_at.w = 1.0f;
+
+                changing_at.x = final_at.x - starting_at.x;
+                changing_at.y = final_at.y - starting_at.y;
+                changing_at.z = final_at.z - starting_at.z;
+            } else {
+                printf("Left-Hand Rule failed (Loop detected or goal unreachable)\n");
+            }
+            break;
+        
         case 'p': // P for "Path" or "Play Solve"
             if (!global_maze_ptr) {
                 printf("Error: global_maze_ptr is NULL. Please set it in testmaze()!\n");
