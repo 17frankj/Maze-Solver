@@ -131,6 +131,19 @@ GLuint vbo;
 int maze_height = 8;
 int maze_width = 8; 
 
+typedef struct { 
+    int x; 
+    int y; 
+} PathNode;
+
+PathNode solution_path[2048]; // Array to store the steps
+int solution_length = 0;      // How many steps in the path
+int solve_index = 0;          // Which step we are currently animating
+
+// IMPORTANT: You must update your 'testmaze' function to assign the maze to this pointer!
+// Remove 'free_maze(m)' from testmaze so the data persists.
+Maze *global_maze_ptr = NULL;
+
 // camera global variables
 vec4 eye;
 vec4 at;
@@ -149,6 +162,7 @@ typedef enum
     TURN_RIGHT,
     SIDE_STEP_LEFT,
     SIDE_STEP_RIGHT,
+    SOLVE_WALK,
     LOOK_UP,
     LOOK_DOWN,
 } state;
@@ -388,6 +402,58 @@ void shuffle(int *arr, int n)
     }
 }
 
+// Recursive function to find path from (x,y) to (goal_x, goal_y)
+int find_path_from(Maze *m, int x, int y, int goal_x, int goal_y) 
+{
+    // 1. Bounds check
+    if (x < 0 || y < 0 || x >= m->width || y >= m->height) return 0;
+    
+    // 2. Check if visited or solving (we re-use the 'visited' flag for the search)
+    if (m->cells[y][x].visited) return 0;
+
+    m->cells[y][x].visited = 1; // Mark as part of current search path
+
+    // 3. Check if we reached the goal
+    if (x == goal_x && y == goal_y) {
+        solution_path[solution_length++] = (PathNode){x, y};
+        return 1; // Found it!
+    }
+
+    // 4. Try all open neighbors
+    // We try them in order. If one returns true, we add ourselves to the path and return true.
+
+    // North (y-1)
+    if (!m->cells[y][x].north) {
+        if (find_path_from(m, x, y-1, goal_x, goal_y)) {
+            solution_path[solution_length++] = (PathNode){x, y};
+            return 1;
+        }
+    }
+    // East (x+1)
+    if (!m->cells[y][x].east) {
+        if (find_path_from(m, x+1, y, goal_x, goal_y)) {
+            solution_path[solution_length++] = (PathNode){x, y};
+            return 1;
+        }
+    }
+    // South (y+1)
+    if (!m->cells[y][x].south) {
+        if (find_path_from(m, x, y+1, goal_x, goal_y)) {
+            solution_path[solution_length++] = (PathNode){x, y};
+            return 1;
+        }
+    }
+    // West (x-1)
+    if (!m->cells[y][x].west) {
+        if (find_path_from(m, x-1, y, goal_x, goal_y)) {
+            solution_path[solution_length++] = (PathNode){x, y};
+            return 1;
+        }
+    }
+
+    return 0; // Dead end
+}
+
 void generate_maze_recursive(Maze *m, int x, int y) 
 {
     m->cells[y][x].visited = 1;
@@ -518,8 +584,8 @@ void testmaze(void)
         printf("No solution.\n");
 
     print_maze(m);
-
-    free_maze(m);
+    global_maze_ptr = m; // Store maze globally for rendering
+    //free_maze(m);
 }
 
 // ----------------- end maze funcitons  ---------------------------------------------------------------------------------//
@@ -985,6 +1051,87 @@ void keyboard(unsigned char key, int mousex, int mousey)
         case 'y': // solve maze
             // implement later
             break;
+        case 'p': // P for "Path" or "Play Solve"
+            if (!global_maze_ptr) {
+                printf("Error: global_maze_ptr is NULL. Please set it in testmaze()!\n");
+                break;
+            }
+
+            // 1. Reset Maze Visited Flags (Clean slate for search)
+            for(int j=0; j<global_maze_ptr->height; j++) {
+                for(int i=0; i<global_maze_ptr->width; i++) {
+                    global_maze_ptr->cells[j][i].visited = 0;
+                }
+            }
+
+            // 2. Get Current Position (Rounded to nearest integer grid coordinate)
+            int startX = (int)roundf(eye.x);
+            int startY = (int)roundf(eye.z);
+
+            // Handle being "outside" the maze at the entrance (z < 0)
+            int is_outside = 0;
+            if (startY < 0) {
+                startY = 0; // Force pathfinding to start at the first cell (0,0)
+                startX = 0; 
+                is_outside = 1; // Mark flag so we know to animate entrance walk
+            }
+            
+            // Safety clamp for X as well
+            if (startX < 0) startX = 0;
+            if (startX >= global_maze_ptr->width) startX = global_maze_ptr->width - 1;
+
+            // 3. Calculate Path
+            solution_length = 0;
+            // Solve from Current -> Exit (width-1, height-1)
+            int found = find_path_from(global_maze_ptr, startX, startY, global_maze_ptr->width-1, global_maze_ptr->height-1);
+            
+            if (found) {
+                printf("Path found! Length: %d steps\n", solution_length);
+                
+                isAnimating = 1;
+                currentState = SOLVE_WALK; // New State
+                
+                // The DFS adds nodes from Goal -> Start.
+                // So index 0 is the Goal, index (length-1) is Start.
+                // We want to move to (length-2) first.
+                solve_index = solution_length - 2; 
+
+                // Setup the first step immediately
+                max_steps = 600; // Speed of each step (30 frames = 0.5 seconds per tile)
+                current_step = 0;
+
+                // Snap eye to exact grid center to prevent drift
+                eye.x = (float)startX;
+                eye.z = (float)startY;
+
+                starting_eye = eye;
+                
+                // Determine target for first step
+                PathNode nextNode = solution_path[solve_index];
+                vec4 target_eye = (vec4){(float)nextNode.x, eye.y, (float)nextNode.y, 1.0f};
+
+                changing_eye.x = target_eye.x - starting_eye.x;
+                changing_eye.y = 0.0f;
+                changing_eye.z = target_eye.z - starting_eye.z;
+
+                // Face the direction of movement
+                // We simply look 1 unit ahead in the direction of the step
+                float dirX = (float)nextNode.x - eye.x;
+                float dirZ = (float)nextNode.y - eye.z;
+                
+                starting_at.x = eye.x + dirX;
+                starting_at.y = eye.y; // Look straight ahead
+                starting_at.z = eye.z + dirZ;
+                starting_at.w = 1.0f;
+                
+                at = starting_at; // Snap view immediately to face path
+                
+                // We keep 'at' relative to 'eye' fixed during the linear slide
+                changing_at = changing_eye; 
+            } else {
+                printf("No path found from (%d, %d)\n", startX, startY);
+            }
+            break;
     }
     glutPostRedisplay();
 }
@@ -1155,6 +1302,69 @@ void idle(void)
                 at.z = eye.z + dz_new;
                 // Keep height the same
                 at.y = starting_at.y;
+            }
+        }
+        else if (currentState == SOLVE_WALK)
+        {
+            if (current_step > max_steps)
+            {
+                // Step Finished.
+                // 1. Snap to grid to prevent drift
+                eye.x = roundf(eye.x);
+                eye.z = roundf(eye.z);
+
+                // 2. Check if we have more steps
+                solve_index--; 
+
+                if (solve_index < 0) {
+                    // Reached the goal!
+                    isAnimating = 0;
+                    currentState = NONE;
+                }
+                else {
+                    // Setup Next Step
+                    current_step = 0;
+                    
+                    // Start from current position/view (Continuity)
+                    starting_eye = eye;
+                    starting_at = at;
+
+                    // Get next target
+                    PathNode nextNode = solution_path[solve_index];
+                    vec4 target_eye = (vec4){(float)nextNode.x, eye.y, (float)nextNode.y, 1.0f};
+
+                    // Movement Vector
+                    changing_eye.x = target_eye.x - starting_eye.x;
+                    changing_eye.y = 0.0f;
+                    changing_eye.z = target_eye.z - starting_eye.z;
+
+                    // Look Target: Where we want to look at the END of the step
+                    // (Position + Direction of travel)
+                    // Note: changing_eye represents the direction of travel (length 1)
+                    vec4 final_at;
+                    final_at.x = target_eye.x + changing_eye.x;
+                    final_at.y = eye.y;
+                    final_at.z = target_eye.z + changing_eye.z;
+                    final_at.w = 1.0f;
+
+                    // Rotation Vector
+                    changing_at.x = final_at.x - starting_at.x;
+                    changing_at.y = final_at.y - starting_at.y;
+                    changing_at.z = final_at.z - starting_at.z;
+                }
+            }
+            else
+            {
+                // Linear Interpolation (Slide + Turn simultaneously)
+                float alpha = (float)current_step / (float)max_steps;
+
+                eye.x = starting_eye.x + (alpha * changing_eye.x);
+                eye.y = starting_eye.y + (alpha * changing_eye.y);
+                eye.z = starting_eye.z + (alpha * changing_eye.z);
+
+                at.x = starting_at.x + (alpha * changing_at.x);
+                at.y = starting_at.y + (alpha * changing_at.y);
+                at.z = starting_at.z + (alpha * changing_at.z);
             }
         }
         else if(currentState == LOOK_UP) 
