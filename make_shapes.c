@@ -75,6 +75,10 @@ vec4 colors[110000] =
  {0.0, 1.0, 0.0, 1.0},	// green (for bottom left)
  {0.0, 0.0, 1.0, 1.0},	// blue  (for bottom right)
  };	
+ 
+vec4 normals[110000] =
+{{0.0, 0.0, 1.0, 0.0},	// facing z+
+ };
 
 // basic cube primitive (1x1x1 centered) to scale/translate later
 vec4 unitCubeVertices[36] = {
@@ -96,6 +100,27 @@ vec4 unitCubeVertices[36] = {
     // Bottom
     {-0.5, -0.5, -0.5, 1}, {0.5, -0.5, 0.5, 1}, {-0.5, -0.5, 0.5, 1},
     {-0.5, -0.5, -0.5, 1}, {0.5, -0.5, -0.5, 1}, {0.5, -0.5, 0.5, 1}
+};
+
+const vec4 cubeNormals[36] = {
+    // Face 1: Right (+X)
+    {1.0f, 0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 0.0f},
+    {1.0f, 0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 0.0f},
+    // Face 2: Left (-X)
+    {-1.0f, 0.0f, 0.0f, 0.0f}, {-1.0f, 0.0f, 0.0f, 0.0f}, {-1.0f, 0.0f, 0.0f, 0.0f},
+    {-1.0f, 0.0f, 0.0f, 0.0f}, {-1.0f, 0.0f, 0.0f, 0.0f}, {-1.0f, 0.0f, 0.0f, 0.0f},
+    // Face 3: Top (+Y)
+    {0.0f, 1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 0.0f},
+    {0.0f, 1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 0.0f},
+    // Face 4: Bottom (-Y)
+    {0.0f, -1.0f, 0.0f, 0.0f}, {0.0f, -1.0f, 0.0f, 0.0f}, {0.0f, -1.0f, 0.0f, 0.0f},
+    {0.0f, -1.0f, 0.0f, 0.0f}, {0.0f, -1.0f, 0.0f, 0.0f}, {0.0f, -1.0f, 0.0f, 0.0f},
+    // Face 5: Front (+Z)
+    {0.0f, 0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f, 0.0f},
+    {0.0f, 0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f, 0.0f},
+    // Face 6: Back (-Z)
+    {0.0f, 0.0f, -1.0f, 0.0f}, {0.0f, 0.0f, -1.0f, 0.0f}, {0.0f, 0.0f, -1.0f, 0.0f},
+    {0.0f, 0.0f, -1.0f, 0.0f}, {0.0f, 0.0f, -1.0f, 0.0f}, {0.0f, 0.0f, -1.0f, 0.0f}
 };
 
 // basic colors
@@ -197,7 +222,6 @@ float magnitude;
 float step_size;
 
 // inital fustrum values
-
 float near   = 0.2f;   // Moved closer so objects 2.5 units away are visible
 float far    = 2000.0f;
 
@@ -207,6 +231,33 @@ float left   = -0.12f;
 float right  = 0.12f;   
 float bottom = -0.12f;  
 float top    = 0.12f;
+
+// Sun variables
+vec4 light_pos = {0.0f, 10.0f, 0.0f, 1.0f}; // initial light position
+float sun_radius = 7.5f;
+float sun_azimuth = 45.0f;
+float sun_elevation = 45.0f;
+vec4 light_source_color = {1.0f, 0.9f, 0.6f, 1.0f}; // warm sunlight color
+
+GLuint sun_mode_loc;
+int sun_mode_toggle = 1;
+GLuint mv_loc;
+GLuint pr_loc;
+GLuint light_pos_loc;
+GLuint shininess_loc;
+GLuint light_color_loc;
+
+GLuint amb_intensity_loc;
+GLuint diff_intensity_loc;
+GLuint spec_color_loc;
+
+vec4 ambient_intensity = {0.15f, 0.15f, 0.15f, 1.0f};  // Medium-low ambient light for visible shadows
+vec4 diffuse_intensity = {1.0, 1.0, 1.0, 1.0};  // Reduced diffuse contribution to prevent overexposure
+vec4 specular_color = {1.0f, 1.0f, 1.0f, 1.0f};      // Specular color remains white
+
+// GLOBAL LIGHTING/MATERIAL PROPERTIES (Example values)
+vec4 sun_position = {0.0f, 10.0f, 0.0f, 1.0f}; // Position of sun light
+float material_shininess = 10.0f;               // Example shininess value
 
 // msc global variables
 int stl_value = 0;    // change this to swap between stl and basic object for memory allocation
@@ -258,6 +309,12 @@ void addCube(mat4 T, int texType)
         vec4 v = unitCubeVertices[i];
         vec4 r = matrix_vector_multi(T, v);
         vertices[vertIndex] = r;
+
+        // normals
+        vec4 n = cubeNormals[i];
+        n.w = 0.0f;
+        vec4 transformed_normal = matrix_vector_multi(T, n);
+        normals[vertIndex] = transformed_normal;
 
         int faceVert = i % 6;
 
@@ -649,6 +706,40 @@ void print_maze(Maze *m)
     }
 }
 
+void draw_sun(void) {
+    // Convert degrees to radians
+    float az_rad = sun_azimuth * M_PI / 180.0f;
+    float el_rad = sun_elevation * M_PI / 180.0f;
+
+    // Calculate Cartesian Coordinates (X, Y, Z) from Spherical Coordinates
+    
+    // R * cos(Elevation) gives the projection onto the XZ plane
+    float horizontal_projection = sun_radius * cosf(el_rad);
+    
+    // X = horizontal_projection * cos(Azimuth)
+    float x = horizontal_projection * cosf(az_rad);
+    
+    // Z = horizontal_projection * sin(Azimuth)
+    float z = horizontal_projection * sinf(az_rad);
+    
+    // Y = R * sin(Elevation)
+    float y = sun_radius * sinf(el_rad);
+
+    // Update the global light position vector
+    light_pos.x = x;
+    light_pos.y = y;
+    light_pos.z = z;
+    light_pos.w = 1.0f; // 1.0 indicates a point light (not directional)
+
+    // Draw the sun as a small cube at the calculated position
+    mat4 sunT = matrix_multi(
+                    matrix_translation(light_pos.x, light_pos.y, light_pos.z),
+                    matrix_scaling(0.2f, 0.2f, 0.2f)
+                );
+    addCube(sunT, TEX_STONE);
+    num_vertices += 36; // sun uses one cube (36 vertices)
+}
+
 void testmaze(void)
 {
     Maze *m = create_maze(maze_width, maze_height);
@@ -833,6 +924,26 @@ mat4 frustum(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat n
 
 // -------------------------- end viewing functions -------------------------------------------------------------------------------------//
 
+// -------------------------- lighting functions -------------------------------------------------------------------------------------//
+
+
+void set_ambient(float r, float g, float b, float a) {
+    ambient_intensity = (vec4){r, g, b, a};
+    glUniform4fv(amb_intensity_loc, 1, (GLfloat*)&ambient_intensity);
+}
+
+void set_diffuse(float r, float g, float b, float a) {
+    diffuse_intensity = (vec4){r, g, b, a};
+    glUniform4fv(diff_intensity_loc, 1, (GLfloat*)&diffuse_intensity);
+}
+
+void set_specular(float r, float g, float b, float a) {
+    specular_color = (vec4){r, g, b, a};
+    glUniform4fv(spec_color_loc, 1, (GLfloat*)&specular_color);
+}
+
+
+// -------------------------- end lighting functions -------------------------------------------------------------------------------------//
 
 // ---------------Open Gl Functions  --------------------------------------------------------------------------------- // 
 void init(void)
@@ -875,26 +986,58 @@ void init(void)
     GLuint buffer;
     glGenBuffers(1, &buffer);
     glBindBuffer(GL_ARRAY_BUFFER, buffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vec4) * num_vertices + sizeof(vec2) * num_vertices, NULL, GL_STATIC_DRAW);
+    // glBufferData(GL_ARRAY_BUFFER, sizeof(vec4) * num_vertices + sizeof(vec2) * num_vertices, NULL, GL_STATIC_DRAW); 
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vec4) * num_vertices + sizeof(vec4) * num_vertices + sizeof(vec2) * num_vertices, NULL, GL_STATIC_DRAW); // added
 
     // Upload only actual data (vertIndex == num_vertices)
     glBufferSubData(GL_ARRAY_BUFFER, 0, num_vertices * sizeof(vec4), vertices);
-    glBufferSubData(GL_ARRAY_BUFFER, sizeof(vec4) * num_vertices, sizeof(vec2) * num_vertices, tex_coords);
+    glBufferSubData(GL_ARRAY_BUFFER, sizeof(vec4) * num_vertices, num_vertices * sizeof(vec4), normals); // ADDED NORMALS
+    glBufferSubData(GL_ARRAY_BUFFER, sizeof(vec4) * num_vertices * 2, sizeof(vec2) * num_vertices, tex_coords);
+    //glBufferSubData(GL_ARRAY_BUFFER, sizeof(vec4) * num_vertices, sizeof(vec2) * num_vertices, tex_coords); // old
 
     GLuint vPosition = glGetAttribLocation(program, "vPosition");
     glEnableVertexAttribArray(vPosition);
     glVertexAttribPointer(vPosition, 4, GL_FLOAT, GL_FALSE, 0, (GLvoid *) 0);
 
+    // ADDED vNormal ATTRIBUTE
+    GLuint vNormal = glGetAttribLocation(program, "vNormal");
+    glEnableVertexAttribArray(vNormal);
+    glVertexAttribPointer(vNormal, 4, GL_FLOAT, GL_FALSE, 0, (GLvoid *) (sizeof(vec4) * num_vertices));
+
     GLuint vTexCoord = glGetAttribLocation(program, "vTexCoord");
     glEnableVertexAttribArray(vTexCoord);
-    glVertexAttribPointer(vTexCoord, 2, GL_FLOAT, GL_FALSE, 0, (GLvoid *) (sizeof(vec4) * num_vertices));
-
-    GLuint texture_location = glGetUniformLocation(program, "texture");
-    glUniform1i(texture_location, 0);
+    // glVertexAttribPointer(vTexCoord, 2, GL_FLOAT, GL_FALSE, 0, (GLvoid *) (sizeof(vec4) * num_vertices)); // old
+    glVertexAttribPointer(vTexCoord, 2, GL_FLOAT, GL_FALSE, 0, (GLvoid *) (sizeof(vec4) * num_vertices * 2));
 
     ctm_location = glGetUniformLocation(program, "ctm");
     mv_loc = glGetUniformLocation(program, "model_view_matrix");
     pr_loc = glGetUniformLocation(program, "projection_matrix");
+
+    light_color_loc = glGetUniformLocation(program, "uLightColor");
+    // Set the light source color with the new yellow value
+    glUniform4fv(light_color_loc, 1, (GLfloat*)&light_source_color);
+
+    // --- Uniform Locations (New Lighting Intensities) ---
+    amb_intensity_loc = glGetUniformLocation(program, "uAmbientIntensity");
+    diff_intensity_loc = glGetUniformLocation(program, "uDiffuseIntensity");
+    spec_color_loc = glGetUniformLocation(program, "uSpecularColor");
+
+    // --- Set Default Lighting Values (Set once during init) ---
+    glUniform4fv(amb_intensity_loc, 1, (GLfloat*)&ambient_intensity);
+    glUniform4fv(diff_intensity_loc, 1, (GLfloat*)&diffuse_intensity);
+    glUniform4fv(spec_color_loc, 1, (GLfloat*)&specular_color);
+
+    // --- Uniform Locations (New Lighting) ---
+    light_pos_loc = glGetUniformLocation(program, "light_position");
+    shininess_loc = glGetUniformLocation(program, "shininess");
+
+    GLuint texture_location = glGetUniformLocation(program, "simpler2D_texture");
+    //GLuint texture_location = glGetUniformLocation(program, "texture");        // old
+    glUniform1i(texture_location, 0);
+
+
+    // Get the location of the uniform named "myIntValue"
+    sun_mode_loc = glGetUniformLocation(program, "sun_mode_toggle");
 
     glEnable(GL_DEPTH_TEST);
     glClearColor(0.0, 0.0, 0.0, 1.0);
@@ -924,6 +1067,12 @@ void display(void)
     glUniformMatrix4fv(mv_loc, 1, GL_FALSE, (GLfloat*)&model_view);
     glUniformMatrix4fv(pr_loc, 1, GL_FALSE, (GLfloat*)&projection);
     glUniformMatrix4fv(ctm_location, 1, GL_FALSE, (GLfloat*)&my_ctm);
+
+    // --- Pass Light Position Uniform (Crucial for the Vertex Shader) ---
+    // The vertex shader needs the light position in world coordinates (assuming sun_position is world space)
+    glUniform4fv(light_pos_loc, 1, (GLfloat*)&sun_position);
+
+    glUniform1i(sun_mode_loc, sun_mode_toggle); // pass sun mode toggle to shader
 
     // --- DRAW ---
     glPolygonMode(GL_FRONT, GL_FILL);
@@ -1288,6 +1437,26 @@ void keyboard(unsigned char key, int mousex, int mousey)
             } else {
                 printf("No path found from (%d, %d)\n", startX, startY);
             }
+            break;
+        case 'j': // increase sun elevation
+            sun_elevation += 5.0f;
+            if (sun_elevation > 90.0f) sun_elevation = 90.0f;
+            break;
+        case 'k': // decrease sun elevation
+            sun_elevation -= 5.0f;
+            if (sun_elevation < 0.0f) sun_elevation = 0.0f;
+            break;
+        case 'v': // turn on/off lighting
+            set_ambient(1.0f, 1.0f, 1.0f, 1.0f);
+            set_diffuse(1.0f, 1.0f, 1.0f, 1.0f);
+            set_specular(1.0f, 1.0f, 1.0f, 1.0f);
+            sun_mode_toggle = 0;
+            break;
+        case 'b': // turn on lighting
+            set_ambient(0.2f, 0.2f, 0.2f, 1.0f);
+            set_diffuse(0.8f, 0.8f, 0.8f, 1.0f);
+            set_specular(1.0f, 1.0f, 1.0f, 1.0f);
+            sun_mode_toggle = 1;
             break;
     }
     glutPostRedisplay();
@@ -1717,6 +1886,7 @@ int main(int argc, char **argv)
     // do prompt before drawing anything
     menu();
     testmaze();
+    draw_sun(); // draw sun at initial position
 
     // now draw the shapes
     glewInit();
