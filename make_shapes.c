@@ -35,6 +35,7 @@
 #define TEX_GRASS 3
 #define MAX_VERTS 110000
 #define TWO_PI (2.0 * M_PI)
+#define CUBE_VERTICES 36
 
 vec2 tex_face[6] = {
     {0.0f, 1.0f}, // bottom-left
@@ -209,6 +210,7 @@ float orbit_height;
 const float mazeW = 8.0f;
 const float mazeH = 8.0f;
 vec4 maze_center = {mazeW/2.0f, 0.0f, mazeH/2.0f, 1.0f};
+int maze_num_vertices = 0; // number of vertices in the maze (without sun)
 
 // flying down global variables
 vec4 starting_at;
@@ -234,11 +236,13 @@ float top    = 0.12f;
 
 // Sun variables
 vec4 light_pos = {0.0f, 10.0f, 0.0f, 1.0f}; // initial light position
-float sun_radius = 7.5f;
+float sun_radius = 10.0f;
 float sun_azimuth = 45.0f;
-float sun_elevation = 45.0f;
+float sun_elevation = 35.0f;
 vec4 light_source_color = {1.0f, 0.9f, 0.6f, 1.0f}; // warm sunlight color
-int inital_sun = 1;
+int inital_sun = 1; // flag to indicate if sun position needs initial update
+int sun_cube_start_index; // Start index of the sun cube's 36 vertices
+mat4 sun_ctm; // Holds the sun's calculated translation/scale matrix
 
 GLuint sun_mode_loc;
 int sun_mode_toggle = 1;
@@ -399,6 +403,7 @@ void buildMazeGeometry(Maze*m)
         }
     }
     num_vertices = vertIndex;
+    maze_num_vertices = vertIndex; // store maze vertex count
 }
 
 
@@ -733,17 +738,16 @@ void draw_sun(void) {
     light_pos.w = 1.0f; // 1.0 indicates a point light (not directional)
 
     // Draw the sun as a small cube at the calculated position
-    mat4 sunT = matrix_multi(
+    sun_ctm = matrix_multi(
                     matrix_translation(light_pos.x, light_pos.y, light_pos.z),
                     matrix_scaling(0.2f, 0.2f, 0.2f)
                 );
-    addCube(sunT, TEX_STONE);
+    //addCube(sunT, TEX_STONE);
+    addCube(sun_ctm, TEX_STONE);
     inital_sun = 0;
-    printf("Sun position updated to (%.2f, %.2f, %.2f)\n", light_pos.x, light_pos.y, light_pos.z);
+    //printf("Sun position updated to (%.2f, %.2f, %.2f)\n", light_pos.x, light_pos.y, light_pos.z);
     //num_vertices += 36; // sun uses one cube (36 vertices)
 }
-
-
 
 void testmaze(void)
 {
@@ -1079,22 +1083,22 @@ void display(void)
     {
         draw_sun();
     }
-
-    // 2. Pass the updated light position to the VShader uniform
+    
+    // Pass the updated light position to the VShader uniform
     // light_pos is the calculated position from draw_sun
     glUniform4fv(light_pos_loc, 1, (GLfloat*)&light_pos);
-
-    // --- Pass Light Position Uniform (Crucial for the Vertex Shader) ---
-    // The vertex shader needs the light position in world coordinates (assuming sun_position is world space)
-    //glUniform4fv(light_pos_loc, 1, (GLfloat*)&sun_position);
-
     glUniform1i(sun_mode_loc, sun_mode_toggle); // pass sun mode toggle to shader
 
     // --- DRAW ---
     glPolygonMode(GL_FRONT, GL_FILL);
     glPolygonMode(GL_BACK, GL_LINE);
 
-    glDrawArrays(GL_TRIANGLES, 0, num_vertices);
+    glDrawArrays(GL_TRIANGLES, 0, num_vertices-36); // draw all but sun cube
+
+    // --- DRAW SUN CUBE (DYNAMIC) ---
+    // The sun cube must use its own transformation matrix (sun_ctm)
+    glUniformMatrix4fv(ctm_location, 1, GL_FALSE, (GLfloat*)&sun_ctm);
+    glDrawArrays(GL_TRIANGLES, maze_num_vertices, 36);
 
     glutSwapBuffers();
 }
@@ -1456,12 +1460,12 @@ void keyboard(unsigned char key, int mousex, int mousey)
             break;
         case 'j': // increase sun elevation
             sun_elevation += 5.0f;
-            if (sun_elevation > 90.0f) sun_elevation = 90.0f;
+            //if (sun_elevation > 90.0f) sun_elevation = 90.0f;
             inital_sun = 1;
             break;
         case 'k': // decrease sun elevation
             sun_elevation -= 5.0f;
-            if (sun_elevation < 0.0f) sun_elevation = 0.0f;
+            //if (sun_elevation < 0.0f) sun_elevation = 0.0f;
             inital_sun = 1;
             break;
         case 'v': // turn off lighting
@@ -1909,6 +1913,7 @@ int main(int argc, char **argv)
     menu();
     testmaze();
     draw_sun(); // draw sun at initial position
+    //draw_sun_cube(); // draw sun cube at initial position
 
     // now draw the shapes
     glewInit();
