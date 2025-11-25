@@ -1446,18 +1446,28 @@ void keyboard(unsigned char key, int mousex, int mousey)
             sun_elevation -= 5.0f;
             if (sun_elevation < 0.0f) sun_elevation = 0.0f;
             break;
-        case 'v': // turn on/off lighting
-            set_ambient(1.0f, 1.0f, 1.0f, 1.0f);
-            set_diffuse(1.0f, 1.0f, 1.0f, 1.0f);
-            set_specular(1.0f, 1.0f, 1.0f, 1.0f);
+        case 'v': // turn off lighting
+            //set_ambient(1.0f, 1.0f, 1.0f, 1.0f);
+            //set_diffuse(1.0f, 1.0f, 1.0f, 1.0f);
+            //set_specular(1.0f, 1.0f, 1.0f, 1.0f);
             sun_mode_toggle = 0;
             break;
         case 'b': // turn on lighting
-            set_ambient(0.2f, 0.2f, 0.2f, 1.0f);
-            set_diffuse(0.8f, 0.8f, 0.8f, 1.0f);
-            set_specular(1.0f, 1.0f, 1.0f, 1.0f);
+            //set_ambient(0.2f, 0.2f, 0.2f, 1.0f);
+            //set_diffuse(0.8f, 0.8f, 0.8f, 1.0f);
+            //set_specular(1.0f, 1.0f, 1.0f, 1.0f);
             sun_mode_toggle = 1;
             break;
+        case 'm': // toggle ambient only mode
+            sun_mode_toggle = 2;
+            break;
+        case ',': // toggle diffuse only mode
+            sun_mode_toggle = 3;
+            break;
+        case '.': // toggle specular only mode
+            sun_mode_toggle = 4;
+            break;
+
     }
     glutPostRedisplay();
 }

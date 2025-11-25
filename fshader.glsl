@@ -16,9 +16,11 @@ uniform vec4 uLightColor;  // Light color/intensity
 uniform vec4 uAmbientIntensity;  // Controls ambient light color/strength
 uniform vec4 uDiffuseIntensity;  // Controls diffuse light color/strength
 uniform vec4 uSpecularColor;     // Controls specular highlight color (usually white)
+uniform int sun_mode_toggle;     // Controls which lighting mode is active
 
 void main()
 {
+    /*
     // 1. Get the texture color, which will serve as the base diffuse color
     // The original fragment shader uses 'texture' as the uniform name, 
     // but the type is 'simpler2D'. Using 'sampler2D' is the standard type.
@@ -52,6 +54,64 @@ void main()
     // Final Color = Ambient + Attenuation * (Diffuse + Specular)
     vec4 final_color = ambient + diffuse + specular;
     
+    gl_FragColor = final_color;
+    */
+
+    // 1. Get the texture color, which will serve as the base diffuse color
+    vec4 tex_color = texture2D(simpler2D_texture, texCoord);
+
+    // 2. Normalize all vectors
+    // These need to be normalized because interpolation (varying) can distort their length.
+    vec3 NN = normalize(N.xyz);    // Normalized Normal Vector
+    vec3 LL = normalize(L_eye.xyz); // Normalized Light Vector
+    vec3 VV = normalize(V_eye.xyz); // Normalized View Vector
+
+    // 3. Calculate Halfway Vector (H)
+    // H = normalize(L + V)
+    vec3 H = normalize(LL + VV);
+
+    vec4 final_color;
+
+    // 4. Calculate lighting components using the uniform variables
+
+    // Ambient: TexColor * Material_Ambient_Coefficient * Light_Color
+    vec4 ambient = tex_color * uAmbientIntensity * uLightColor; 
+
+    // Diffuse: dot(L, N) * TexColor * Material_Diffuse_Coefficient * Light_Color
+    float diffuse_factor = max(dot(LL, NN), 0.0);
+    vec4 diffuse = diffuse_factor * tex_color * uDiffuseIntensity * uLightColor; 
+ 
+    // Specular: pow(dot(N, H), shininess) * Material_Specular_Color * Light_Color
+    float specular_factor = pow(max(dot(NN, H), 0.0), shininess);
+    // Note: Specular highlights usually don't use the texture color, only the light color and material specular color.
+    vec4 specular = specular_factor * uSpecularColor * uLightColor; 
+ 
+    // 5. Check the toggle uniform to determine the final color calculation
+    if (sun_mode_toggle == 0) {
+    // Mode 0: LIGHTING OFF (Render raw texture color, ignoring all light calculations)
+        final_color = tex_color; 
+    }
+    else if (sun_mode_toggle == 1) {
+    // Mode 1: FULL PHONG LIGHTING (Ambient + Diffuse + Specular)
+        final_color = ambient + diffuse + specular;
+    }
+    else if (sun_mode_toggle == 2) {
+    // Mode 2: AMBIENT ONLY
+        final_color = ambient;
+    }
+    else if (sun_mode_toggle == 3) {
+    // Mode 3: DIFFUSE ONLY (Plus a small ambient term to see texture in shadow)
+        final_color = (ambient * 0.1) + diffuse; 
+    }
+    else if (sun_mode_toggle == 4) {
+    // Mode 4: SPECULAR ONLY (Plus a medium ambient term for surface visibility)
+        final_color = (ambient * 0.5) + specular; 
+    }
+    else {
+    // Fallback to Full Lighting
+        final_color = ambient + diffuse + specular;
+    }
+
     gl_FragColor = final_color;
 }
 
