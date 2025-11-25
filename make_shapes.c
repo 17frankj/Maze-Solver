@@ -238,6 +238,7 @@ float sun_radius = 7.5f;
 float sun_azimuth = 45.0f;
 float sun_elevation = 45.0f;
 vec4 light_source_color = {1.0f, 0.9f, 0.6f, 1.0f}; // warm sunlight color
+int inital_sun = 1;
 
 GLuint sun_mode_loc;
 int sun_mode_toggle = 1;
@@ -737,8 +738,12 @@ void draw_sun(void) {
                     matrix_scaling(0.2f, 0.2f, 0.2f)
                 );
     addCube(sunT, TEX_STONE);
-    num_vertices += 36; // sun uses one cube (36 vertices)
+    inital_sun = 0;
+    printf("Sun position updated to (%.2f, %.2f, %.2f)\n", light_pos.x, light_pos.y, light_pos.z);
+    //num_vertices += 36; // sun uses one cube (36 vertices)
 }
+
+
 
 void testmaze(void)
 {
@@ -762,6 +767,8 @@ void testmaze(void)
 
     print_maze(m);
     global_maze_ptr = m; // Store maze globally for rendering
+    num_vertices += 36; // sun uses one cube (36 vertices)
+    inital_sun = 0;
     //free_maze(m);
 }
 
@@ -1067,10 +1074,19 @@ void display(void)
     glUniformMatrix4fv(mv_loc, 1, GL_FALSE, (GLfloat*)&model_view);
     glUniformMatrix4fv(pr_loc, 1, GL_FALSE, (GLfloat*)&projection);
     glUniformMatrix4fv(ctm_location, 1, GL_FALSE, (GLfloat*)&my_ctm);
+    
+    if(inital_sun == 1)
+    {
+        draw_sun();
+    }
+
+    // 2. Pass the updated light position to the VShader uniform
+    // light_pos is the calculated position from draw_sun
+    glUniform4fv(light_pos_loc, 1, (GLfloat*)&light_pos);
 
     // --- Pass Light Position Uniform (Crucial for the Vertex Shader) ---
     // The vertex shader needs the light position in world coordinates (assuming sun_position is world space)
-    glUniform4fv(light_pos_loc, 1, (GLfloat*)&sun_position);
+    //glUniform4fv(light_pos_loc, 1, (GLfloat*)&sun_position);
 
     glUniform1i(sun_mode_loc, sun_mode_toggle); // pass sun mode toggle to shader
 
@@ -1441,21 +1457,17 @@ void keyboard(unsigned char key, int mousex, int mousey)
         case 'j': // increase sun elevation
             sun_elevation += 5.0f;
             if (sun_elevation > 90.0f) sun_elevation = 90.0f;
+            inital_sun = 1;
             break;
         case 'k': // decrease sun elevation
             sun_elevation -= 5.0f;
             if (sun_elevation < 0.0f) sun_elevation = 0.0f;
+            inital_sun = 1;
             break;
         case 'v': // turn off lighting
-            //set_ambient(1.0f, 1.0f, 1.0f, 1.0f);
-            //set_diffuse(1.0f, 1.0f, 1.0f, 1.0f);
-            //set_specular(1.0f, 1.0f, 1.0f, 1.0f);
             sun_mode_toggle = 0;
             break;
         case 'b': // turn on lighting
-            //set_ambient(0.2f, 0.2f, 0.2f, 1.0f);
-            //set_diffuse(0.8f, 0.8f, 0.8f, 1.0f);
-            //set_specular(1.0f, 1.0f, 1.0f, 1.0f);
             sun_mode_toggle = 1;
             break;
         case 'm': // toggle ambient only mode
