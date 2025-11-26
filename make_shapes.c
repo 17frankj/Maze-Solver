@@ -1897,6 +1897,23 @@ void menu(void)
 {
     char line[100];
     printf("Welcome to Maze Solver\n");
+    printf("Controls:\n");
+    printf("  e: Enlarge Object\n");
+    printf("  r: Reset Object Size\n");
+    printf("  t: Start Intro Animation\n");
+    printf("  w: Walk Forward a: Strafe Left s: Walk Backward d: Strafe Right\n");
+    printf("  z: Turn left\n");
+    printf("  x: Turn Right\n");
+    printf("  y: Solve Maze (Shortest Path)\n");
+    printf("  L: Solve Maze (Left Hand Rule)\n");
+    printf("  j: increase sun elevation\n");
+    printf("  k: decrease sun elevation\n");
+    printf("  v: turn off lighting\n");
+    printf("  b: turn on lighting\n");
+    printf("  m: toggle ambient only mode\n");
+    printf("  ,: toggle diffuse only mode\n");
+    printf("  .: toggle specular only mode\n");
+     printf("  q: Quit\n");
 
 }
 
