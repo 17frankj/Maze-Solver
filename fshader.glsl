@@ -75,7 +75,7 @@ void main()
         final_color = (ambient * 0.5) + specular; 
     }
     
-    // --- SPOTLIGHT CALCULATION ---
+    // Turn flashlight mode on
     else if (sun_mode_toggle == 5) {
         // The flashlight direction (spot_dir_eye) should be normalized.
         vec3 SD = normalize(spot_dir_eye); 
@@ -102,6 +102,13 @@ void main()
         final_color = ambient * 0.1; // Reduced ambient for darkness
         }
     }
+
+    // Turn flashlight mode off (back to normal lighting)
+    else if (sun_mode_toggle == 6) {
+        // Dark lighting mode (minimal ambient only)
+        final_color = ambient * 0.1;
+    }
+
     else {
     // Fallback to Full Lighting
         final_color = ambient + diffuse + specular;

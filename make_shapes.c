@@ -260,8 +260,11 @@ GLuint pr_loc;
 GLuint light_pos_loc;
 GLuint shininess_loc;
 GLuint light_color_loc;
+
+// flahslight (spotlight) variables
 GLuint spot_cutoff_loc;
 GLuint spot_exponent_loc;
+GLuint flashlight_dir_loc;
 
 GLuint amb_intensity_loc;
 GLuint diff_intensity_loc;
@@ -270,6 +273,8 @@ GLuint spec_color_loc;
 vec4 ambient_intensity = {0.15f, 0.15f, 0.15f, 1.0f};  // Medium-low ambient light for visible shadows
 vec4 diffuse_intensity = {1.0, 1.0, 1.0, 1.0};  // Reduced diffuse contribution to prevent overexposure
 vec4 specular_color = {1.0f, 1.0f, 1.0f, 1.0f};      // Specular color remains white
+
+vec4 flashlight_dir_eye = (vec4){0.0, -0.1, -1.0, 0.0}; // Direction in eye coordinates
 
 // GLOBAL LIGHTING/MATERIAL PROPERTIES (Example values)
 vec4 sun_position = {0.0f, 10.0f, 0.0f, 1.0f}; // Position of sun light
@@ -1102,6 +1107,12 @@ void init(void)
     glUniform1f(spot_cutoff_loc, cutoff_cos);
     glUniform1f(spot_exponent_loc, exponent_val);
 
+    // Get the location of the new dynamic flashlight direction uniform
+    flashlight_dir_loc = glGetUniformLocation(program, "flashlight_direction_uniform");
+
+    // Set the initial value
+    glUniform4fv(flashlight_dir_loc, 1, (GLfloat*)&flashlight_dir_eye);
+
     glEnable(GL_DEPTH_TEST);
     glClearColor(0.0, 0.0, 0.0, 1.0);
     glDepthRange(0,1);
@@ -1143,6 +1154,9 @@ void display(void)
     glUniform4fv(light_pos_loc, 1, (GLfloat*)&light_pos);
     glUniform1i(sun_mode_loc, sun_mode_toggle); // pass sun mode toggle to shader
 
+    // Pass the dynamically updated flashlight direction 
+    glUniform4fv(flashlight_dir_loc, 1, (GLfloat*)&flashlight_dir_eye);
+
     // --- DRAW ---
     glPolygonMode(GL_FRONT, GL_FILL);
     glPolygonMode(GL_BACK, GL_LINE);
@@ -1182,7 +1196,7 @@ void keyboard(unsigned char key, int mousex, int mousey)
             isAnimating = 1;
             currentState = FLYING_UP;  // start flying animation
 
-            max_steps = 1;          // set max steps for flying up   // was 2000!!!!!!
+            max_steps = 2000;          // set max steps for flying up   // was 2000!!!!!!
             current_step = 0;        // reset current step
 
             // Maze center:
@@ -1545,12 +1559,15 @@ void keyboard(unsigned char key, int mousex, int mousey)
         case '.': // toggle specular only mode
             sun_mode_toggle = 4;
             break;
-        case 'g': // toggle Flshlight mode
+        case 'g': // toggle Flshlight on
             sun_mode_toggle = 5;
+            break;
+        case 'h': // toggle Flashlight off
+            sun_mode_toggle = 6;
             break;
 
     }
-    printf("Sun mode toggle: %d\n", sun_mode_toggle);
+    //printf("Sun mode toggle: %d\n", sun_mode_toggle); // debuging
     glutPostRedisplay();
 }
 
@@ -1576,7 +1593,7 @@ void idle(void)
             {
                 currentState = FLYING_DOWN; // go to next state
                 current_step = 0;
-                max_steps = 1; // Take 1000 frames to fly down     // was 1000!!!!!!
+                max_steps = 1000; // Take 1000 frames to fly down     // was 1000!!!!!!
 
                 starting_eye = eye; 
                 starting_at = at;   // Currently looking at maze_center
@@ -1890,7 +1907,7 @@ void motion(int x, int y)
     // make sure the user is pressing their keys and the pointer location is in bounds
     if (!leftDown)
         return;
-    if (!touching)
+    if (sun_mode_toggle != 5)
         return;
 
     // get loaction of mouse pointer 
@@ -1898,22 +1915,13 @@ void motion(int x, int y)
     float glx = (x / 400.0f) - 1.0f;
     float gly = 1.0f - (y / 400.0f);
 
-    // if pointer has moved off the object, stop rotating
-    // this is checked every frame!
-    if (!is_pointer_on_object(glx, gly))
-    {
-        touching = 0;    // stop the rotation session
-        return;
-    }
-
     // keep previous and current points on the "virtual sphere"
     vec4 v1 = project_to_sphere(lastX, lastY);
     vec4 v2 = project_to_sphere(glx, gly);
 
     // rotation axis = cross product(v2, v1)
     // cross product of the previous and current virtual spheres 
-    vec4 axis = vec_Cross_Product(v2, v1);  // make this v1, v2 for inverse controls!!!!
-    float axis_len = vec_Magnitude(axis);
+    vec4 axis = vec_Cross_Product(v1, v2);  // make this v1, v2 for inverse controls!!!!
     axis = vec_Normalized(axis);  
 
     // gets the angle of the two vectors using the inverse 
@@ -1932,10 +1940,9 @@ void motion(int x, int y)
     // rotation matrix about arbitrary axis
     mat4 rotation = axis_angle_rotation(axis, angle);
 
-    // apply rotation about origin
-    //my_ctm = matrix_multi(rotation, my_ctm);
-    my_ctm = matrix_multi(my_ctm, rotation);
-   
+    //rotate the current flashlight direction by the new rotation matrix.
+    flashlight_dir_eye = matrix_vector_multi(rotation, flashlight_dir_eye);
+  
     lastX = glx;
     lastY = gly;
     glutPostRedisplay();
@@ -1981,7 +1988,9 @@ void menu(void)
     printf("  m: toggle ambient only mode\n");
     printf("  ,: toggle diffuse only mode\n");
     printf("  .: toggle specular only mode\n");
-    printf("  g: Turn On/Off Flashlight\n");
+    printf("  g: Turn On Flashlight\n");
+    printf("  h: Turn Off Flashlight\n");
+    printf("  Note: Use mouse to control flashlight direction when flashlight is on\n");
      printf("  q: Quit\n");
 
 }

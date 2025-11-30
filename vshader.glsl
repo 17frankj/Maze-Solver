@@ -10,6 +10,7 @@ varying vec4 V_eye;   // View vector (in Eye Coordinates)
 varying float dist;   // Distance to the light source
 varying vec2 texCoord;
 varying vec3 spot_dir_eye; // Spotlight direction in Eye Coordinates
+uniform vec4 flashlight_direction_uniform;
 
 uniform int sun_mode_toggle;
 uniform mat4 model_view_matrix;
@@ -42,7 +43,8 @@ void main()
 		// Flashlight is at the viewer's position (origin in Eye Coordinates)
 		light_pos_eye = vec4(0.0, 0.0, 0.0, 1.0);
 		// Flashlight shines down the negative Z-axis (camera's forward) in Eye Coordinates
-		spot_dir_eye = vec3(0.0, -0.3, -1.0);
+		//spot_dir_eye = vec3(0.0, -0.3, -1.0);
+		spot_dir_eye = flashlight_direction_uniform.xyz;
 } 
 	else {
 		// Standard light source (transform world position to eye coordinates)
