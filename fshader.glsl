@@ -6,6 +6,7 @@ varying vec4 L_eye;   // Vector to light source (in Eye Coordinates)
 varying vec4 V_eye;   // View vector (in Eye Coordinates)
 varying float dist;   // Distance to light source
 varying vec2 texCoord;
+varying vec3 spot_dir_eye; // Spotlight direction in Eye Coordinates
 
 // Uniforms for texture and lighting parameters
 uniform sampler2D simpler2D_texture; // Corrected sampler name to be standard and clear
@@ -17,62 +18,28 @@ uniform vec4 uAmbientIntensity;  // Controls ambient light color/strength
 uniform vec4 uDiffuseIntensity;  // Controls diffuse light color/strength
 uniform vec4 uSpecularColor;     // Controls specular highlight color (usually white)
 uniform int sun_mode_toggle;     // Controls which lighting mode is active
+// --- NEW UNIFORMS FOR FLASHLIGHT CONTROL ---
+uniform float spot_cutoff;      // Cosine of the cutoff angle
+uniform float spot_exponent;    // Exponent for falloff
 
 void main()
 {
-    /*
-    // 1. Get the texture color, which will serve as the base diffuse color
-    // The original fragment shader uses 'texture' as the uniform name, 
-    // but the type is 'simpler2D'. Using 'sampler2D' is the standard type.
-    vec4 tex_color = texture2D(simpler2D_texture, texCoord);
-    
-    // 2. Normalize all vectors
-    vec3 NN = normalize(N.xyz);
-    vec3 LL = normalize(L_eye.xyz);
-    vec3 VV = normalize(V_eye.xyz);
-    
-    // 3. Calculate Halfway Vector (H)
-    vec3 H = normalize(LL + VV);
-
-    // 4. Ambient Component (Using a simplified ambient factor)
-    // We use a constant ambient factor (e.g., 0.2) multiplied by the texture color
-    vec4 ambient = tex_color * uAmbientIntensity * uLightColor;
-    
-    // 5. Diffuse Component
-    // Diffuse is dot(L, N) * Material_Color * Light_Intensity
-    float diffuse_factor = max(dot(LL, NN), 0.0);
-    // Use the texture color (tex_color) as the material's diffuse color
-    vec4 diffuse = diffuse_factor * uDiffuseIntensity * uLightColor * tex_color; 
-    
-    // 6. Specular Component
-    // Specular is pow(dot(N, H), shininess) * Specular_Color * Light_Intensity
-    float specular_factor = pow(max(dot(NN, H), 0.0), shininess);
-    // Use white for specular highlight, as is common
-    vec4 specular = specular_factor * uSpecularColor * uLightColor;
-
-    // 8. Final Color
-    // Final Color = Ambient + Attenuation * (Diffuse + Specular)
-    vec4 final_color = ambient + diffuse + specular;
-    
-    gl_FragColor = final_color;
-    */
-
-    // 1. Get the texture color, which will serve as the base diffuse color
+    // Get the texture color, which will serve as the base diffuse color
     vec4 tex_color = texture2D(simpler2D_texture, texCoord);
 
-    // 2. Normalize all vectors
+    // Normalize all vectors
     // These need to be normalized because interpolation (varying) can distort their length.
     vec3 NN = normalize(N.xyz);    // Normalized Normal Vector
     vec3 LL = normalize(L_eye.xyz); // Normalized Light Vector
     vec3 VV = normalize(V_eye.xyz); // Normalized View Vector
 
-    // 3. Calculate Halfway Vector (H)
+    // Calculate Halfway Vector (H)
     // H = normalize(L + V)
     vec3 H = normalize(LL + VV);
 
     vec4 final_color;
 
-    // 4. Calculate lighting components using the uniform variables
+    // Calculate lighting components using the uniform variables
 
     // Ambient: TexColor * Material_Ambient_Coefficient * Light_Color
     vec4 ambient = tex_color * uAmbientIntensity * uLightColor; 
@@ -86,7 +53,7 @@ void main()
     // Note: Specular highlights usually don't use the texture color, only the light color and material specular color.
     vec4 specular = specular_factor * uSpecularColor * uLightColor; 
  
-    // 5. Check the toggle uniform to determine the final color calculation
+    // Check the toggle uniform to determine the final color calculation
     if (sun_mode_toggle == 0) {
     // Mode 0: LIGHTING OFF (Render raw texture color, ignoring all light calculations)
         final_color = tex_color; 
@@ -106,6 +73,34 @@ void main()
     else if (sun_mode_toggle == 4) {
     // Mode 4: SPECULAR ONLY (Plus a medium ambient term for surface visibility)
         final_color = (ambient * 0.5) + specular; 
+    }
+    
+    // --- SPOTLIGHT CALCULATION ---
+    else if (sun_mode_toggle == 5) {
+        // The flashlight direction (spot_dir_eye) should be normalized.
+        vec3 SD = normalize(spot_dir_eye); 
+
+        // Calculate the cosine of the angle between the light vector (-LL) and 
+        // the spotlight direction (SD). Note: LL points *from* the surface *to* the light, 
+        // so we use -LL to point *from* the light *to* the surface.
+        float angle_cos = dot(-LL, SD);
+
+        // Check if the fragment is within the spotlight cone
+        if (angle_cos >= spot_cutoff) {
+            // Calculate the spotlight intensity factor.
+            // The closer angle_cos is to 1.0 (center of the beam), the higher the power.
+            float spot_factor = pow(angle_cos, spot_exponent);
+
+            // Mode 5: FLASHLIGHT MODE (Ambient + Diffuse, multiplied by spot_factor)
+            // Only ambient and diffuse are requested, and both are attenuated.
+            final_color = (ambient + diffuse) * spot_factor;
+
+        } 
+        else {
+        // Outside the spotlight cone, only the base ambient light remains.
+        // This ensures surfaces are still minimally visible.
+        final_color = ambient * 0.1; // Reduced ambient for darkness
+        }
     }
     else {
     // Fallback to Full Lighting

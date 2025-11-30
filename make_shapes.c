@@ -36,6 +36,7 @@
 #define MAX_VERTS 110000
 #define TWO_PI (2.0 * M_PI)
 #define CUBE_VERTICES 36
+#define DEG_TO_RAD (M_PI / 180.0)
 
 vec2 tex_face[6] = {
     {0.0f, 1.0f}, // bottom-left
@@ -145,6 +146,14 @@ int tex_height = 1200;
 
 mat4 my_ctm = {{1,0,0,0},{0,1,0,0}, {0,0,1,0}, {0,0,0,1}};  // initial identity matrix for moving the objects
 
+// entrence and exit squares
+mat4 entrance_ctm;
+mat4 exit_ctm;
+float startX;
+float startY;
+float goalX;
+float goalY;
+
 // converstions to open gl types
 GLuint ctm_location;  
 GLuint mv_loc;
@@ -251,6 +260,8 @@ GLuint pr_loc;
 GLuint light_pos_loc;
 GLuint shininess_loc;
 GLuint light_color_loc;
+GLuint spot_cutoff_loc;
+GLuint spot_exponent_loc;
 
 GLuint amb_intensity_loc;
 GLuint diff_intensity_loc;
@@ -749,6 +760,32 @@ void draw_sun(void) {
     //num_vertices += 36; // sun uses one cube (36 vertices)
 }
 
+void draw_entrence_square(void)
+{
+    // Uses the calculated global startX and startY
+    float entrance_x = (float)startX;
+    float entrance_z = (float)startY;
+    
+    entrance_ctm = matrix_multi(
+                    matrix_translation(entrance_x, -0.95f, entrance_z),
+                    matrix_scaling(1.0f, 0.05f, 1.0f)
+                );
+    addCube(entrance_ctm, TEX_STONE);
+}
+
+void draw_exit_square(void)
+{
+    // Uses the calculated global goalX and goalY
+    float exit_x = (float)goalX;
+    float exit_z = (float)goalY;
+    
+    exit_ctm = matrix_multi(
+                    matrix_translation(exit_x, -0.95f, exit_z),
+                    matrix_scaling(1.0f, 0.05f, 1.0f)
+    );
+    addCube(exit_ctm, TEX_STONE);
+}
+
 void testmaze(void)
 {
     Maze *m = create_maze(maze_width, maze_height);
@@ -764,10 +801,12 @@ void testmaze(void)
             m->cells[y][x].visited = 0;
             m->cells[y][x].on_path = 0;
         }
+    
     if (solve_maze(m, 0, 0, maze_width-1, maze_height-1))
         printf("Maze solved!\n");
     else
         printf("No solution.\n");
+    
 
     print_maze(m);
     global_maze_ptr = m; // Store maze globally for rendering
@@ -1050,6 +1089,19 @@ void init(void)
     // Get the location of the uniform named "myIntValue"
     sun_mode_loc = glGetUniformLocation(program, "sun_mode_toggle");
 
+    // Get the locations for the new spotlight uniforms
+    spot_cutoff_loc = glGetUniformLocation(program, "spot_cutoff");
+    spot_exponent_loc = glGetUniformLocation(program, "spot_exponent");
+
+    // Define flashlight parameters (e.g., 15-degree half-angle cone, moderate falloff)
+    GLfloat cutoff_angle = 15.0; // 15 degrees half-angle (30 degree total cone)
+    GLfloat cutoff_cos = cos(cutoff_angle * DEG_TO_RAD);
+    GLfloat exponent_val = 20.0; // Exponent for sharp falloff
+
+    // Set initial values for the new spotlight uniforms
+    glUniform1f(spot_cutoff_loc, cutoff_cos);
+    glUniform1f(spot_exponent_loc, exponent_val);
+
     glEnable(GL_DEPTH_TEST);
     glClearColor(0.0, 0.0, 0.0, 1.0);
     glDepthRange(0,1);
@@ -1082,8 +1134,10 @@ void display(void)
     if(inital_sun == 1)
     {
         draw_sun();
+        //draw_entrence_square();
+        //draw_exit_square();
     }
-    
+
     // Pass the updated light position to the VShader uniform
     // light_pos is the calculated position from draw_sun
     glUniform4fv(light_pos_loc, 1, (GLfloat*)&light_pos);
@@ -1093,11 +1147,17 @@ void display(void)
     glPolygonMode(GL_FRONT, GL_FILL);
     glPolygonMode(GL_BACK, GL_LINE);
 
-    glDrawArrays(GL_TRIANGLES, 0, num_vertices-36); // draw all but sun cube
+    glDrawArrays(GL_TRIANGLES, 0, num_vertices-(36)); // draw all but sun cube
 
     // --- DRAW SUN CUBE (DYNAMIC) ---
     // The sun cube must use its own transformation matrix (sun_ctm)
     glUniformMatrix4fv(ctm_location, 1, GL_FALSE, (GLfloat*)&sun_ctm);
+    glDrawArrays(GL_TRIANGLES, maze_num_vertices, 36);
+
+    glUniformMatrix4fv(ctm_location, 1, GL_FALSE, (GLfloat*)&entrance_ctm);
+    glDrawArrays(GL_TRIANGLES, maze_num_vertices, 36);
+
+    glUniformMatrix4fv(ctm_location, 1, GL_FALSE, (GLfloat*)&exit_ctm);
     glDrawArrays(GL_TRIANGLES, maze_num_vertices, 36);
 
     glutSwapBuffers();
@@ -1122,7 +1182,7 @@ void keyboard(unsigned char key, int mousex, int mousey)
             isAnimating = 1;
             currentState = FLYING_UP;  // start flying animation
 
-            max_steps = 2000;          // set max steps for flying up
+            max_steps = 1;          // set max steps for flying up   // was 2000!!!!!!
             current_step = 0;        // reset current step
 
             // Maze center:
@@ -1142,6 +1202,7 @@ void keyboard(unsigned char key, int mousex, int mousey)
 
             break;
         case 'w': // walk forward
+
             isAnimating = 1;
             currentState = WALK_FORWARD;  // start forward animation
 
@@ -1175,6 +1236,7 @@ void keyboard(unsigned char key, int mousex, int mousey)
             changing_at = changing_eye;
             //changing_at.z = target_at.z - starting_at.z;
             break;
+
         case 's': // walk backward
             // similar to walk forward but reverse direction
             isAnimating = 1;
@@ -1483,10 +1545,16 @@ void keyboard(unsigned char key, int mousex, int mousey)
         case '.': // toggle specular only mode
             sun_mode_toggle = 4;
             break;
+        case 'g': // toggle Flshlight mode
+            sun_mode_toggle = 5;
+            break;
 
     }
+    printf("Sun mode toggle: %d\n", sun_mode_toggle);
     glutPostRedisplay();
 }
+
+
 
 // call idle function to do animation
 void idle(void)
@@ -1508,7 +1576,7 @@ void idle(void)
             {
                 currentState = FLYING_DOWN; // go to next state
                 current_step = 0;
-                max_steps = 1000; // Take 1000 frames to fly down
+                max_steps = 1; // Take 1000 frames to fly down     // was 1000!!!!!!
 
                 starting_eye = eye; 
                 starting_at = at;   // Currently looking at maze_center
@@ -1904,7 +1972,7 @@ void menu(void)
     printf("  w: Walk Forward a: Strafe Left s: Walk Backward d: Strafe Right\n");
     printf("  z: Turn left\n");
     printf("  x: Turn Right\n");
-    printf("  y: Solve Maze (Shortest Path)\n");
+    printf("  p: Solve Maze (Shortest Path)\n");
     printf("  L: Solve Maze (Left Hand Rule)\n");
     printf("  j: increase sun elevation\n");
     printf("  k: decrease sun elevation\n");
@@ -1913,6 +1981,7 @@ void menu(void)
     printf("  m: toggle ambient only mode\n");
     printf("  ,: toggle diffuse only mode\n");
     printf("  .: toggle specular only mode\n");
+    printf("  g: Turn On/Off Flashlight\n");
      printf("  q: Quit\n");
 
 }
