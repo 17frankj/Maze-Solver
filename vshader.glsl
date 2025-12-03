@@ -45,7 +45,14 @@ void main()
 		// Flashlight shines down the negative Z-axis (camera's forward) in Eye Coordinates
 		//spot_dir_eye = vec3(0.0, -0.3, -1.0);
 		spot_dir_eye = flashlight_direction_uniform.xyz;
-} 
+	} 
+
+	// Eye Light (Point light at eye, shines in all directions)
+	else if (sun_mode_toggle == 7) { 
+		light_pos_eye = vec4(0.0, 0.0, 0.0, 1.0); // Light source is at the viewer
+		spot_dir_eye = vec3(0.0); // Dummy value, not a spotlight
+	}
+
 	else {
 		// Standard light source (transform world position to eye coordinates)
         light_pos_eye = model_view_matrix * light_position;

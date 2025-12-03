@@ -109,6 +109,12 @@ void main()
         final_color = ambient * 0.1;
     }
 
+    else if (sun_mode_toggle == 7) {
+        // VIEWER LIGHT (Ambient + Diffuse + Specular)
+        // Light is a point source at the viewer's position, shining everywhere.
+        final_color = ambient + diffuse + specular;
+    }
+
     else {
     // Fallback to Full Lighting
         final_color = ambient + diffuse + specular;

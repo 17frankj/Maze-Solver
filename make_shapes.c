@@ -37,6 +37,10 @@
 #define TWO_PI (2.0 * M_PI)
 #define CUBE_VERTICES 36
 #define DEG_TO_RAD (M_PI / 180.0)
+#define WALL_THICKNESS 0.1f
+#define POLE_SIZE 0.2f
+#define CUBE_HEIGHT 1.0f 
+#define COLLISION_MARGIN 0.35f // was .35
 
 vec2 tex_face[6] = {
     {0.0f, 1.0f}, // bottom-left
@@ -175,9 +179,8 @@ PathNode solution_path[2048]; // Array to store the steps
 int solution_length = 0;      // How many steps in the path
 int solve_index = 0;          // Which step we are currently animating
 
-// IMPORTANT: You must update your 'testmaze' function to assign the maze to this pointer!
-// Remove 'free_maze(m)' from testmaze so the data persists.
 Maze *global_maze_ptr = NULL;
+vec4 previous_eye;
 
 // camera global variables
 vec4 eye;
@@ -231,6 +234,7 @@ float dx;
 float dz;
 float magnitude;
 float step_size;
+int check_collision = 0; // flag to enable/disable collision detection
 
 // inital fustrum values
 float near   = 0.2f;   // Moved closer so objects 2.5 units away are visible
@@ -820,6 +824,227 @@ void testmaze(void)
     //free_maze(m);
 }
 
+int is_inside_aabb(float px, float pz, float cx, float cz, float sx, float sz)
+{
+    float half_sx = sx / 2.0f;
+    float half_sz = sz / 2.0f;
+    
+    // Check X dimension
+    if (px < cx - half_sx || px > cx + half_sx) {
+        return 0;
+    }
+    // Check Z dimension
+    if (pz < cz - half_sz || pz > cz + half_sz) {
+        return 0;
+    }
+    return 1;
+}
+
+void checkCollision(void)
+{
+    // printf("Checking collision at player position (%.2f, %.2f)\n", eye.x, eye.z); debugging
+
+    // Safety check: ensure maze data is loaded
+    if (global_maze_ptr == NULL) {
+        check_collision = 0;
+        return; 
+    }
+    
+    // Player's 2D position
+    float px = eye.x;
+    float pz = eye.z;
+
+    // Get current grid cell indices (i = x, j = z)
+    // Adding 0.5f correctly centers the player within the cell they are in.
+    int i = (int)(px + 0.5f); 
+    int j = (int)(pz + 0.5f); 
+    
+    // Check Maze Boundary (The outer walls of the grid)
+    // Maze coordinates run from 0 to maze_width-1 and 0 to maze_height-1.
+    if (px < -COLLISION_MARGIN || px > maze_width - 1.0f + COLLISION_MARGIN ||
+        pz < -COLLISION_MARGIN || pz > maze_height - 1.0f + COLLISION_MARGIN)
+    {
+        check_collision = 1;
+        return;
+    }
+    
+    // Clamp i and j to valid indices for cell access
+    i = (i < 0) ? 0 : (i >= maze_width ? maze_width - 1 : i);
+    j = (j < 0) ? 0 : (j >= maze_height ? maze_height - 1 : j);
+    
+    // Access the current cell data
+    cell current_cell = global_maze_ptr->cells[j][i]; 
+    
+    // Check for Collision with Adjacent Walls
+    
+    // --- North Wall Check (Center at (i, j - 0.5)) ---
+    // Exclude the entrance at (0, 0)
+    if (current_cell.north && !(i == 0 && j == 0)) 
+    {
+        float wx = (float)i;
+        float wz = (float)j - 0.5f;
+        if (is_inside_aabb(px, pz, wx, wz, 1.0f, WALL_THICKNESS + 2.0f * COLLISION_MARGIN))
+        {
+            check_collision = 1;
+            return;
+        }
+    }
+
+    // --- West Wall Check (Center at (i - 0.5, j)) ---
+    if (current_cell.west)
+    {
+        float wx = (float)i - 0.5f;
+        float wz = (float)j;
+        if (is_inside_aabb(px, pz, wx, wz, WALL_THICKNESS + 2.0f * COLLISION_MARGIN, 1.0f))
+        {
+            check_collision = 1;
+            return;
+        }
+    }
+
+    // --- Internal South Wall Check (The North wall of cell j+1) ---
+    // Check the cell one unit South (if it exists)
+    if (j < maze_height - 1) {
+        cell south_cell = global_maze_ptr->cells[j+1][i];
+        // If the cell to the South has a North wall, then there is a wall here.
+        if (south_cell.north) 
+        {
+            // This wall's center is the same as the current cell's South boundary
+            float wx = (float)i;
+            float wz = (float)j + 0.5f; 
+            if (is_inside_aabb(px, pz, wx, wz, 1.0f, WALL_THICKNESS + 2.0f * COLLISION_MARGIN))
+            {
+                check_collision = 1;
+                return;
+            }
+        }
+    }
+
+    // --- Internal East Wall Check (The West wall of cell i+1) ---
+    // Check the cell one unit East (if it exists)
+    if (i < maze_width - 1) {
+        cell east_cell = global_maze_ptr->cells[j][i+1];
+        // If the cell to the East has a West wall, then there is a wall here.
+        if (east_cell.west) 
+        {
+            // This wall's center is the same as the current cell's East boundary
+            float wx = (float)i + 0.5f;
+            float wz = (float)j;
+            if (is_inside_aabb(px, pz, wx, wz, WALL_THICKNESS + 2.0f * COLLISION_MARGIN, 1.0f))
+            {
+                check_collision = 1;
+                return;
+            }
+        }
+    }
+
+    // --- Outer Boundary South/East Check (Kept for the exit/outermost walls) ---
+    // These specific checks ensure you catch the perimeter walls that don't share a cell to the South/East.
+    if (j == maze_height - 1 && current_cell.south && !(i == maze_width - 1 && j == maze_height - 1))
+    {
+        float wx = (float)i;
+        float wz = (float)j + 0.5f;
+        if (is_inside_aabb(px, pz, wx, wz, 1.0f, WALL_THICKNESS + 2.0f * COLLISION_MARGIN))
+        {
+            check_collision = 1;
+            return;
+        }
+    }
+
+    if (i == maze_width - 1 && current_cell.east)
+    {
+        float wx = (float)i + 0.5f;
+        float wz = (float)j;
+        if (is_inside_aabb(px, pz, wx, wz, WALL_THICKNESS + 2.0f * COLLISION_MARGIN, 1.0f))
+        {
+            check_collision = 1;
+            return;
+        }
+    }
+    
+    // Check for Collision with Poles (Grid Intersections)
+    // Poles are placed at centers (pi - 0.5, pj - 0.5) for pi in [0, width], pj in [0, height].
+    
+    // Iterate over the four pole positions nearest the current cell (i, j)
+    for(int pj=j; pj <= j+1 && pj <= maze_height; pj++)
+    {
+        for(int pi=i; pi <= i+1 && pi <= maze_width; pi++)
+        {
+            // Center of the pole cuboid
+            float px_pole = (float)pi - 0.5f;
+            float pz_pole = (float)pj - 0.5f;
+            
+            // Pole size is 0.2 x 0.2, collision check includes margin
+            if (is_inside_aabb(px, pz, px_pole, pz_pole, POLE_SIZE + 2.0f * COLLISION_MARGIN, POLE_SIZE + 2.0f * COLLISION_MARGIN))
+            {
+                check_collision = 1;
+                return;
+            }
+        }
+    }
+
+    // No collision detected
+    check_collision = 0;
+}
+
+int is_move_blocked(int current_i, int current_j, int target_i, int target_j)
+{
+    if (global_maze_ptr == NULL) {
+        return 0; // No maze, no collision
+    }
+
+    // --- Boundary Check ---
+    // Make sure the target cell is within the maze grid (0 to width/height - 1)
+    if (target_i < 0 || target_i >= maze_width || 
+        target_j < 0 || target_j >= maze_height)
+    {
+        // Check if this move is trying to exit the maze at the designated point (Exit is at (W-1, H-1))
+        if (target_i == maze_width - 1 && target_j == maze_height) {
+             // This is the South boundary check for the exit cell at (W-1, H-1)
+             // Allow move if the exit is open (you may need to add an 'is_exit_open' global flag)
+             return 0; 
+        }
+        if (target_i == maze_width && target_j == maze_height - 1) {
+             // This is the East boundary check for the exit cell at (W-1, H-1)
+             // Allow move if the exit is open
+             return 0; 
+        }
+
+        // Check if the current position is the entrance (0, 0) and the move is to the North/West boundary
+        if (current_i == 0 && current_j == 0) {
+            if ((target_i == 0 && target_j == -1) || (target_i == -1 && target_j == 0)) {
+                return 0; // Allow movement into the entrance gap
+            }
+        }
+        
+        // Any other out-of-bounds move is blocked
+        return 1; 
+    }
+
+    // --- 2. Check Wall Flag Between Cells ---
+    cell current_cell = global_maze_ptr->cells[current_j][current_i];
+    
+    // Check if moving NORTH (j decreases by 1)
+    if (target_j == current_j - 1) {
+        if (current_cell.north) return 1; // Wall exists in current cell's North slot
+    }
+    // Check if moving SOUTH (j increases by 1)
+    else if (target_j == current_j + 1) {
+        if (current_cell.south) return 1; // Wall exists in current cell's South slot
+    }
+    // Check if moving EAST (i increases by 1)
+    else if (target_i == current_i + 1) {
+        if (current_cell.east) return 1; // Wall exists in current cell's East slot
+    }
+    // Check if moving WEST (i decreases by 1)
+    else if (target_i == current_i - 1) {
+        if (current_cell.west) return 1; // Wall exists in current cell's West slot
+    }
+    
+    // If we've reached here, the move is legal (no wall flag set, and not out of bounds)
+    return 0; // No wall collision
+}
+
 // ----------------- end maze funcitons  ---------------------------------------------------------------------------------//
 
 // ----------------- object functions  ---------------------------------------------------------------------------------//
@@ -1179,6 +1404,7 @@ void display(void)
 
 void keyboard(unsigned char key, int mousex, int mousey)
 {
+    //check_collision = 0; // reset collision flag
     switch(key)
     {
         case 'e': // enlarge
@@ -1216,7 +1442,99 @@ void keyboard(unsigned char key, int mousex, int mousey)
 
             break;
         case 'w': // walk forward
+            // --- Calculate the intended total step ---
+    
+            // Calculate Forward Vector (Direction = At - Eye)
+            float dx = at.x - eye.x;
+            float dz = at.z - eye.z;
 
+            // Normalize (Make length 1.0)
+            float magnitude = sqrtf(dx*dx + dz*dz);
+            if (magnitude == 0.0f) {
+                magnitude = 1.0f; // Safety check
+                break;           // Cannot move if magnitude is zero
+            } 
+
+            float step_size = 1.0f; // Target distance to move in one animation cycle
+
+            // Calculate the total change vector
+            vec4 total_translation;
+            total_translation.x = (dx / magnitude) * step_size;
+            total_translation.y = 0.0f; // Don't change height
+            total_translation.z = (dz / magnitude) * step_size;
+            total_translation.w = 0.0f; 
+
+            // Calculate the final target position
+            vec4 target_eye;
+            target_eye.x = eye.x + total_translation.x;
+            target_eye.y = eye.y + total_translation.y;
+            target_eye.z = eye.z + total_translation.z;
+            target_eye.w = eye.w;
+
+
+            // --- Check Boundary/Collision ---
+            
+            // Determine the TARGET CELL based on the intended movement
+            int current_i = (int)(eye.x + 0.5f);
+            int current_j = (int)(eye.z + 0.5f);
+
+            // Get the direction of movement (mostly X or Z, depends on camera angle)
+            int target_i = current_i;
+            int target_j = current_j;
+
+            // assume movement is primarily along the grid axis, so check the dominant direction:
+            if (fabsf(dx) > fabsf(dz)) { // Moving mostly horizontally (i.e., East/West)
+                target_i += (dx > 0) ? 1 : -1;
+            } else { // Moving mostly vertically (i.e., North/South)
+                target_j += (dz > 0) ? 1 : -1;
+            }
+
+            // Check for wall collision using the simplified grid-based function
+            if (is_move_blocked(current_i, current_j, target_i, target_j)) {
+                check_collision = 1; 
+                return; // Block movement
+            }
+
+            // Store the current safe position (This acts as the 'previous_eye')
+            vec4 current_safe_eye = eye; 
+
+            // Temporarily set 'eye' to the target position to test for collision
+            eye = target_eye;            
+
+            // Run the collision check
+            checkCollision(); // This sets the global 'check_collision' flag
+
+            // Immediately revert the 'eye' back to the safe position
+            eye = current_safe_eye; 
+
+            // --- Determine Outcome ---
+
+            if (check_collision == 1) {
+                // Collision detected: Block movement
+                check_collision = 0; // Reset flag for the next frame
+                // Do NOT start animation
+                break;              
+            }
+            
+            // --- Start Animation (NO collision) ---
+
+            isAnimating = 1;
+            currentState = WALK_FORWARD; 
+            max_steps = 100;           
+            current_step = 0;         
+
+            // Capture Start Points
+            starting_eye = current_safe_eye; // Use the safe position
+            starting_at = at;
+
+            // Set Changing Vectors (Total translation amount for the full animation)
+            changing_eye = total_translation; // The full step calculated above
+            changing_at = total_translation;  // Move look-at point by the same amount
+            
+            break;
+
+            // pre collision version
+            /*
             isAnimating = 1;
             currentState = WALK_FORWARD;  // start forward animation
 
@@ -1250,8 +1568,10 @@ void keyboard(unsigned char key, int mousex, int mousey)
             changing_at = changing_eye;
             //changing_at.z = target_at.z - starting_at.z;
             break;
+            */
 
         case 's': // walk backward
+            
             // similar to walk forward but reverse direction
             isAnimating = 1;
             currentState = WALK_BACKWARD;  // start backwards animation
@@ -1379,10 +1699,6 @@ void keyboard(unsigned char key, int mousex, int mousey)
             // -PI/2 = -90 degrees (Right turn)
             changing_angle = M_PI / 2.0f;
             break;
-        case 'y': // solve maze
-            // implement later
-            break;
-
         case 'l': // L for "Left-Hand Rule"
             if (!global_maze_ptr) break;
 
@@ -1565,6 +1881,9 @@ void keyboard(unsigned char key, int mousex, int mousey)
         case 'h': // toggle Flashlight off
             sun_mode_toggle = 6;
             break;
+        case 'f': // toggle full lighting mode from viewer position
+            sun_mode_toggle = 7;
+            break;
 
     }
     //printf("Sun mode toggle: %d\n", sun_mode_toggle); // debuging
@@ -1598,7 +1917,7 @@ void idle(void)
                 starting_eye = eye; 
                 starting_at = at;   // Currently looking at maze_center
 
-                vec4 target_eye = (vec4){0.0f, 0.0f, -2.0f, 1.0f}; // Define where to go
+                vec4 target_eye = (vec4){0.0f, 0.0f, 0.0f, 1.0f}; // Define where to go
                                                     //  ^ changes how far in
 
                 // Calculate vector to get there
@@ -1624,7 +1943,7 @@ void idle(void)
                 // Current Height = StartHeight + (PercentComplete * HeightChange)
                 float current_height = starting_eye.y + (alpha * changing_eye.y);
 
-                // --- 2. Calculate New Eye Position using Polar Coordinates ---
+                // --- Calculate New Eye Position using Polar Coordinates ---
                 // x = center_x + radius * cos(theta)
                 // z = center_z + radius * sin(theta)
                 
@@ -1990,6 +2309,7 @@ void menu(void)
     printf("  .: toggle specular only mode\n");
     printf("  g: Turn On Flashlight\n");
     printf("  h: Turn Off Flashlight\n");
+    printf("  f: Full lighting from viewer position\n");
     printf("  Note: Use mouse to control flashlight direction when flashlight is on\n");
      printf("  q: Quit\n");
 
