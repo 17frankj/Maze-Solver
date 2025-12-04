@@ -1442,9 +1442,9 @@ void keyboard(unsigned char key, int mousex, int mousey)
 
             break;
         case 'w': // walk forward
-            // --- Calculate the intended total step ---
+            // --- 1. Calculate the intended total step vector (Forward) ---
     
-            // Calculate Forward Vector (Direction = At - Eye)
+            // Direction = At - Eye
             float dx = at.x - eye.x;
             float dz = at.z - eye.z;
 
@@ -1452,85 +1452,57 @@ void keyboard(unsigned char key, int mousex, int mousey)
             float magnitude = sqrtf(dx*dx + dz*dz);
             if (magnitude == 0.0f) {
                 magnitude = 1.0f; // Safety check
-                break;           // Cannot move if magnitude is zero
+                break; // Cannot move if magnitude is zero
             } 
 
-            float step_size = 1.0f; // Target distance to move in one animation cycle
-
-            // Calculate the total change vector
+            float step_size = 1.0f; 
             vec4 total_translation;
+
+            // Calculate the total change vector (Forward)
             total_translation.x = (dx / magnitude) * step_size;
-            total_translation.y = 0.0f; // Don't change height
+            total_translation.y = 0.0f; 
             total_translation.z = (dz / magnitude) * step_size;
             total_translation.w = 0.0f; 
 
-            // Calculate the final target position
-            vec4 target_eye;
-            target_eye.x = eye.x + total_translation.x;
-            target_eye.y = eye.y + total_translation.y;
-            target_eye.z = eye.z + total_translation.z;
-            target_eye.w = eye.w;
-
-
-            // --- Check Boundary/Collision ---
+            // --- 2. Grid-Based Collision Check ---
             
-            // Determine the TARGET CELL based on the intended movement
             int current_i = (int)(eye.x + 0.5f);
             int current_j = (int)(eye.z + 0.5f);
-
-            // Get the direction of movement (mostly X or Z, depends on camera angle)
             int target_i = current_i;
             int target_j = current_j;
 
-            // assume movement is primarily along the grid axis, so check the dominant direction:
-            if (fabsf(dx) > fabsf(dz)) { // Moving mostly horizontally (i.e., East/West)
-                target_i += (dx > 0) ? 1 : -1;
-            } else { // Moving mostly vertically (i.e., North/South)
-                target_j += (dz > 0) ? 1 : -1;
+            // Determine the target cell based on the dominant direction of the translation vector
+            if (fabsf(total_translation.x) > fabsf(total_translation.z)) { 
+                // Moving mostly horizontally (i.e., East/West)
+                target_i += (total_translation.x > 0) ? 1 : -1;
+            } else { 
+                // Moving mostly vertically (i.e., North/South)
+                target_j += (total_translation.z > 0) ? 1 : -1;
             }
 
             // Check for wall collision using the simplified grid-based function
+            // Assuming is_move_blocked(current_i, current_j, target_i, target_j) exists
             if (is_move_blocked(current_i, current_j, target_i, target_j)) {
                 check_collision = 1; 
-                return; // Block movement
-            }
-
-            // Store the current safe position (This acts as the 'previous_eye')
-            vec4 current_safe_eye = eye; 
-
-            // Temporarily set 'eye' to the target position to test for collision
-            eye = target_eye;            
-
-            // Run the collision check
-            checkCollision(); // This sets the global 'check_collision' flag
-
-            // Immediately revert the 'eye' back to the safe position
-            eye = current_safe_eye; 
-
-            // --- Determine Outcome ---
-
-            if (check_collision == 1) {
-                // Collision detected: Block movement
-                check_collision = 0; // Reset flag for the next frame
-                // Do NOT start animation
-                break;              
+                break; // Block movement
             }
             
-            // --- Start Animation (NO collision) ---
+            // --- 3. Start Animation (NO collision) ---
+
+            // The temporary AABB check logic has been removed as it is redundant with is_move_blocked()
 
             isAnimating = 1;
             currentState = WALK_FORWARD; 
-            max_steps = 100;           
-            current_step = 0;         
+            max_steps = 100; 
+            current_step = 0;
 
             // Capture Start Points
-            starting_eye = current_safe_eye; // Use the safe position
+            starting_eye = eye; 
             starting_at = at;
 
             // Set Changing Vectors (Total translation amount for the full animation)
-            changing_eye = total_translation; // The full step calculated above
-            changing_at = total_translation;  // Move look-at point by the same amount
-            
+            changing_eye = total_translation; 
+            changing_at = total_translation;
             break;
 
             // pre collision version
@@ -1572,6 +1544,97 @@ void keyboard(unsigned char key, int mousex, int mousey)
 
         case 's': // walk backward
             
+            // --- Calculate the intended total step vector (Backward) ---
+            
+            // Direction = At - Eye (This is the FORWARD direction vector)
+            dx = at.x - eye.x;
+            dz = at.z - eye.z;
+
+            // Normalize (Make length 1.0)
+            magnitude = sqrtf(dx*dx + dz*dz);
+            if (magnitude == 0.0f) {
+                magnitude = 1.0f; 
+                break;
+            } 
+
+            step_size = 1.0f; 
+            total_translation;
+
+            // Calculate the total change vector (Backward is the negative of Forward)
+            total_translation.x = -(dx / magnitude) * step_size;
+            total_translation.y = 0.0f; 
+            total_translation.z = -(dz / magnitude) * step_size;
+            total_translation.w = 0.0f; 
+
+            // Calculate the final target position
+            vec4 target_eye;
+            target_eye.x = eye.x + total_translation.x;
+            target_eye.y = eye.y + total_translation.y;
+            target_eye.z = eye.z + total_translation.z;
+            target_eye.w = eye.w;
+
+            // --- Grid-Based and AABB Collision Check ---
+            
+            // Grid-Based Pre-Check (Redundant but keeps what was working for you)
+            current_i = (int)(eye.x + 0.5f);
+            current_j = (int)(eye.z + 0.5f);
+            target_i = current_i;
+            target_j = current_j;
+
+            // Determine the target cell based on the dominant direction of the translation vector
+            // Use the *backward* translation vector to determine the target cell
+            if (fabsf(total_translation.x) > fabsf(total_translation.z)) { 
+                target_i += (total_translation.x > 0) ? 1 : -1;
+            } else { 
+                target_j += (total_translation.z > 0) ? 1 : -1;
+            }
+            
+            // Check for wall collision using the simplified grid-based function
+            if (is_move_blocked(current_i, current_j, target_i, target_j)) {
+                check_collision = 1; 
+                break; // Block movement
+            }
+
+            // AABB Check (The previously working, more detailed check)
+
+            // Store the current safe position (This acts as the 'previous_eye')
+            vec4 current_safe_eye = eye; 
+
+            // Temporarily set 'eye' to the target position to test for collision
+            eye = target_eye;
+
+            // Run the collision check
+            checkCollision(); // This sets the global 'check_collision' flag
+
+            // Immediately revert the 'eye' back to the safe position
+            eye = current_safe_eye; 
+
+            // --- Determine Outcome ---
+
+            if (check_collision == 1) {
+                // Collision detected: Block movement
+                check_collision = 0; // Reset flag for the next frame
+                break;
+            }
+
+            // --- Start Animation (NO collision) ---
+
+            isAnimating = 1;
+            currentState = WALK_BACKWARD; 
+            max_steps = 100;
+            current_step = 0;
+
+            // Capture Start Points
+            starting_eye = current_safe_eye;
+            starting_at = at;
+
+            // Set Changing Vectors (Total translation amount for the full animation)
+            changing_eye = total_translation;
+            changing_at = total_translation; 
+            
+            break;
+            
+            /* pre collision version // saved for reference/debugging
             // similar to walk forward but reverse direction
             isAnimating = 1;
             currentState = WALK_BACKWARD;  // start backwards animation
@@ -1605,7 +1668,89 @@ void keyboard(unsigned char key, int mousex, int mousey)
             // (This keeps the camera rotation locked, looking in the same direction)
             changing_at = changing_eye;
             break;
+            */
         case 'd': // strafe right
+            // --- Calculate the intended total step vector ---
+
+            // Direction = At - Eye (Forward Vector)
+            dx = at.x - eye.x;
+            dz = at.z - eye.z;
+
+            // Normalize (Make length 1.0)
+            magnitude = sqrtf(dx*dx + dz*dz);
+            if (magnitude == 0.0f) {
+                magnitude = 1.0f; 
+                break;
+            } 
+
+            step_size = 1.0f; 
+            total_translation;
+
+            // Calculate the total change vector (Left is perpendicular to Forward: (-dz, dx))
+            total_translation.x = -(dz / magnitude) * step_size; // Note the negative sign on dx
+            total_translation.y = 0.0f; 
+            total_translation.z = (dx / magnitude) * step_size;
+            total_translation.w = 0.0f; 
+
+            // Calculate the final target position
+            target_eye;
+            target_eye.x = eye.x + total_translation.x;
+            target_eye.y = eye.y + total_translation.y;
+            target_eye.z = eye.z + total_translation.z;
+            target_eye.w = eye.w;
+
+
+            // --- Grid-Based and AABB Collision Check ---
+            
+            //  Grid-Based Pre-Check
+            current_i = (int)(eye.x + 0.5f);
+            current_j = (int)(eye.z + 0.5f);
+            target_i = current_i;
+            target_j = current_j;
+
+            // Determine the target cell based on the dominant direction of the translation vector
+            if (fabsf(total_translation.x) > fabsf(total_translation.z)) { 
+                target_i += (total_translation.x > 0) ? 1 : -1;
+            } else { 
+                target_j += (total_translation.z > 0) ? 1 : -1;
+            }
+            
+            // Check for wall collision using the simplified grid-based function
+            if (is_move_blocked(current_i, current_j, target_i, target_j)) {
+                check_collision = 1; 
+                break; // Block movement
+            }
+
+            // AABB Check
+            current_safe_eye = eye; 
+            eye = target_eye;
+            checkCollision(); 
+            eye = current_safe_eye; 
+
+            // --- Determine Outcome ---
+
+            if (check_collision == 1) {
+                check_collision = 0; 
+                break;
+            }
+
+            // --- Start Animation (NO collision) ---
+
+            isAnimating = 1;
+            currentState = SIDE_STEP_LEFT; 
+            max_steps = 100;
+            current_step = 0;
+
+            // Capture Start Points
+            starting_eye = current_safe_eye;
+            starting_at = at;
+
+            // Set Changing Vectors (Total translation amount for the full animation)
+            changing_eye = total_translation;
+            changing_at = total_translation; 
+            
+            break;
+            /*
             // similar to walk forward but reverse direction
             isAnimating = 1;
             currentState = SIDE_STEP_RIGHT;  // start right animation
@@ -1639,7 +1784,89 @@ void keyboard(unsigned char key, int mousex, int mousey)
             // (This keeps the camera rotation locked, looking in the same direction)
             changing_at = changing_eye;
             break;
+            */
         case 'a': // strafe left
+             // --- Calculate the intended total step vector  ---
+
+            // Direction = At - Eye (Forward Vector)
+            dx = at.x - eye.x;
+            dz = at.z - eye.z;
+
+            // Normalize (Make length 1.0)
+            magnitude = sqrtf(dx*dx + dz*dz);
+            if (magnitude == 0.0f) {
+                magnitude = 1.0f; 
+                break;
+            } 
+
+            step_size = 1.0f; 
+            total_translation;
+
+            // Calculate the total change vector (Right is perpendicular to Forward: (dz, -dx))
+            total_translation.x = (dz / magnitude) * step_size;
+            total_translation.y = 0.0f; 
+            total_translation.z = -(dx / magnitude) * step_size; // Note the negative sign on dz
+            total_translation.w = 0.0f; 
+
+            // Calculate the final target position
+            target_eye;
+            target_eye.x = eye.x + total_translation.x;
+            target_eye.y = eye.y + total_translation.y;
+            target_eye.z = eye.z + total_translation.z;
+            target_eye.w = eye.w;
+
+
+            // --- Grid-Based and AABB Collision Check ---
+            
+            // 2a. Grid-Based Pre-Check
+            current_i = (int)(eye.x + 0.5f);
+            current_j = (int)(eye.z + 0.5f);
+            target_i = current_i;
+            target_j = current_j;
+
+            // Determine the target cell based on the dominant direction of the translation vector
+            if (fabsf(total_translation.x) > fabsf(total_translation.z)) { 
+                target_i += (total_translation.x > 0) ? 1 : -1;
+            } else { 
+                target_j += (total_translation.z > 0) ? 1 : -1;
+            }
+            
+            // Check for wall collision using the simplified grid-based function
+            if (is_move_blocked(current_i, current_j, target_i, target_j)) {
+                check_collision = 1; 
+                break; // Block movement
+            }
+
+            // AABB Check
+            current_safe_eye = eye; 
+            eye = target_eye;
+            checkCollision(); 
+            eye = current_safe_eye; 
+
+            // --- Determine Outcome ---
+
+            if (check_collision == 1) {
+                check_collision = 0; 
+                break;
+            }
+
+            // --- Start Animation (NO collision) ---
+
+            isAnimating = 1;
+            currentState = SIDE_STEP_RIGHT; 
+            max_steps = 100;
+            current_step = 0;
+
+            // Capture Start Points
+            starting_eye = current_safe_eye;
+            starting_at = at;
+
+            // Set Changing Vectors (Total translation amount for the full animation)
+            changing_eye = total_translation;
+            changing_at = total_translation; 
+            
+            break;
+            /*
             // similar to walk forward but reverse direction
             isAnimating = 1;
             currentState = SIDE_STEP_LEFT;  // start left animation
@@ -1673,6 +1900,7 @@ void keyboard(unsigned char key, int mousex, int mousey)
             // (This keeps the camera rotation locked, looking in the same direction)
             changing_at = changing_eye;
             break;
+            */
         case 'z': // turn left
             isAnimating = 1;
             currentState = TURN_LEFT; 
