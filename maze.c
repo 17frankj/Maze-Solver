@@ -2480,8 +2480,6 @@ void menu(void)
     char line[100];
     printf("Welcome to Maze Solver\n");
     printf("Controls:\n");
-    printf("  e: Enlarge Object\n");
-    printf("  r: Reset Object Size\n");
     printf("  t: Start Intro Animation\n");
     printf("  w: Walk Forward a: Strafe Left s: Walk Backward d: Strafe Right\n");
     printf("  z: Turn left\n");
