@@ -1,0 +1,14 @@
+# Generate Fully Rendered 3D Maze 
+## Program that generates fully lite and rendered Randomly Generated Maze in Open Gl
+## Basic animations such as movment and intro cutscene implemented fully in C
+## Fully playable randomized Maze
+## Automatic maze solving using a Backtracking Algorithm
+
+### Created by : Joshua Frank
+### Completed  : 12/05/2025
+
+
+### How to Run: type make maze
+###             then: ./maze
+
+### Needed to Run: Linux on Windows, Ubuntu
