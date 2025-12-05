@@ -13,12 +13,13 @@ uniform sampler2D simpler2D_texture; // Corrected sampler name to be standard an
 uniform float shininess;
 uniform vec4 uLightColor;  // Light color/intensity
 
-// --- NEW UNIFORMS FOR LIGHTING CONTROL ---
+// New Uniforms for lighting control
 uniform vec4 uAmbientIntensity;  // Controls ambient light color/strength
 uniform vec4 uDiffuseIntensity;  // Controls diffuse light color/strength
 uniform vec4 uSpecularColor;     // Controls specular highlight color (usually white)
 uniform int sun_mode_toggle;     // Controls which lighting mode is active
-// --- NEW UNIFORMS FOR FLASHLIGHT CONTROL ---
+
+// New Uniforms for flashlight control
 uniform float spot_cutoff;      // Cosine of the cutoff angle
 uniform float spot_exponent;    // Exponent for falloff
 
@@ -50,7 +51,6 @@ void main()
  
     // Specular: pow(dot(N, H), shininess) * Material_Specular_Color * Light_Color
     float specular_factor = pow(max(dot(NN, H), 0.0), shininess);
-    // Note: Specular highlights usually don't use the texture color, only the light color and material specular color.
     vec4 specular = specular_factor * uSpecularColor * uLightColor; 
  
     // Check the toggle uniform to determine the final color calculation
@@ -81,8 +81,7 @@ void main()
         vec3 SD = normalize(spot_dir_eye); 
 
         // Calculate the cosine of the angle between the light vector (-LL) and 
-        // the spotlight direction (SD). Note: LL points *from* the surface *to* the light, 
-        // so we use -LL to point *from* the light *to* the surface.
+        // the spotlight direction (SD).
         float angle_cos = dot(-LL, SD);
 
         // Check if the fragment is within the spotlight cone
@@ -110,7 +109,7 @@ void main()
     }
 
     else if (sun_mode_toggle == 7) {
-        // VIEWER LIGHT (Ambient + Diffuse + Specular)
+        // Viewer Light (Ambient + Diffuse + Specular)
         // Light is a point source at the viewer's position, shining everywhere.
         final_color = ambient + diffuse + specular;
     }

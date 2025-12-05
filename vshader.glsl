@@ -32,13 +32,9 @@ void main()
 	// Transform normal to Eye Coordinates (only rotation matters)
 	N = normalize(model_view_matrix * ctm * vNormal);
 	
-	// Calculate Light Vector (L_eye) and Distance (dist)
-	// light_position is typically in World or Eye coordinates.
-	// Assuming light_position is in World coordinates like in the original shader, 
-	// we transform it to Eye coordinates first.
 	vec4 light_pos_eye = model_view_matrix * light_position; // old, pre flashlight
 
-	// --- FLASHLIGHT LOGIC (sun_mode_toggle == 5) ---
+	// FLASHLIGHT LOGIC (sun_mode_toggle == 5)
 	if (sun_mode_toggle == 5) {
 		// Flashlight is at the viewer's position (origin in Eye Coordinates)
 		light_pos_eye = vec4(0.0, 0.0, 0.0, 1.0);
